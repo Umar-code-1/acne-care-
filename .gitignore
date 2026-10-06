@@ -1,0 +1,28 @@
+﻿# Dependencies and generated output
+node_modules/
+dist/
+build/
+coverage/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local configuration and secrets
+.env*
+!.env.example
+
+# User uploads and local database data
+backend/uploads/
+uploads/
+
+# Logs and OS/editor files
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Keep the local frontend Git metadata backup out of the project commit
+.local-frontend-git-backup/

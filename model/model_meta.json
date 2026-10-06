@@ -1,0 +1,18 @@
+{
+  "img_size": 384,
+  "class_names": [
+    "Blackheads",
+    "Cyst",
+    "Papules",
+    "Pustules",
+    "Whiteheads"
+  ],
+  "severity_map": {
+    "Blackheads": "Mild",
+    "Whiteheads": "Mild",
+    "Papules": "Moderate",
+    "Pustules": "Moderate",
+    "Cyst": "Severe"
+  },
+  "cyst_threshold": 0.2
+}
