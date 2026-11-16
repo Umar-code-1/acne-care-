@@ -2,7 +2,7 @@
 import React from "react";
 import AppIcon from "./AppIcon";
 
-function Sidebar({ user, page, setPage, onLogout, appointments = [], open, onClose }) {
+function Sidebar({ user, page, setPage, appointments = [], open, onClose }) {
     const pending = appointments.filter((a) => a.status === "pending").length;
   const myPending = user.role === "dermatologist" ? pending : 0;
 
@@ -15,6 +15,7 @@ function Sidebar({ user, page, setPage, onLogout, appointments = [], open, onClo
     { id: "profile", ic: "settings", lb: "Settings" },
     { id: "verify", ic: "shieldCheck", lb: "Verify Doctors",
       badge: appointments.length ? undefined : undefined },
+    { id: "platform-fees", ic: "card", lb: "Platform Fees" },
   ];
 
   const doctorNav = [
@@ -22,20 +23,18 @@ function Sidebar({ user, page, setPage, onLogout, appointments = [], open, onClo
     { id: "appointments", ic: "calendar", lb: "Appointments", badge: myPending || undefined },
     { id: "patients", ic: "users", lb: "My Patients" },
     { id: "prescriptions", ic: "bottle", lb: "Skincare Plans" },
-    { id: "profile", ic: "profile", lb: "Profile" },
-    { id: "payments", ic: "wallet", lb: "Payments" },
+    { id: "payments", ic: "wallet", lb: "Payments", badge: appointments.filter((a) => a.payment === "pending_verification").length },
+    { id: "platform-fee", ic: "card", lb: "Platform Fee" },
   ];
 
   const patientNav = [
     { id: "dashboard", ic: "home", lb: "Dashboard" },
     { id: "scan", ic: "faceScan", lb: "Skin Analysis" },
-    { id: "diet", ic: "leaf", lb: "Diet & Nutrition" },
-    { id: "routine", ic: "bottle", lb: "Skincare Routine" },
-    { id: "appointments", ic: "calendar", lb: "My Appointments" },
+    { id: "diet", ic: "leaf", lb: "Diet" },
     { id: "book", ic: "doctor", lb: "Book Appointment" },
-    { id: "prescriptions", ic: "document", lb: "Skincare Plans" },
+    { id: "appointments", ic: "calendar", lb: "My Appointments" },
+    { id: "skincare", ic: "bottle", lb: "Skincare" },
     { id: "store", ic: "bag", lb: "Skincare Store" },
-    { id: "profile", ic: "profile", lb: "Profile" },
   ];
 
   const nav =
@@ -44,13 +43,6 @@ function Sidebar({ user, page, setPage, onLogout, appointments = [], open, onClo
       : user.role === "dermatologist"
       ? doctorNav
       : patientNav;
-
-  const avCls =
-    user.role === "admin"
-      ? "av-a"
-      : user.role === "dermatologist"
-      ? "av-d"
-      : "av-p";
 
   return (
 <div className={`sidebar ${open ? "open" : ""}`}>
@@ -74,23 +66,6 @@ onClick={() => { setPage(item.id); onClose?.(); }}        >
         </button>
       ))}
 
-      <div className="sidebar-user">
-        <div className={`uav ${avCls}`}>{user.avatar}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="u-name">{user.name}</div>
-          <div className="u-role">
-            {user.role === "dermatologist" ? "Dermatologist" : user.role}
-          </div>
-        </div>
-        <button
-          className="logout-btn"
-          onClick={onLogout}
-          title="Logout"
-          aria-label="Logout"
-        >
-          <AppIcon name="logout" />
-        </button>
-      </div>
     </div>
   );
 }

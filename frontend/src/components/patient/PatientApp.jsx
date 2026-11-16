@@ -1,27 +1,26 @@
 // src/components/patient/PatientApp.jsx
-import React from "react";
+import { lazy } from "react";
 
 import PatDash from "./PatDash";
-import PatScan from "./PatScan";
-import PatDiet from "./PatDiet";
-import PatRoutine from "./PatRoutine";
-import PatAppts from "./PatAppts";
-import PatBook from "./PatBook";
-import PatRx from "./PatRx";
-import PatStore from "./PatStore";
-import PatProfile from "./PatProfile";
+
+const PatScan = lazy(() => import("./PatScan"));
+const PatDiet = lazy(() => import("./PatDiet"));
+const PatAppts = lazy(() => import("./PatAppts"));
+const PatBook = lazy(() => import("./PatBook"));
+const PatRx = lazy(() => import("./PatRx"));
+const PatStore = lazy(() => import("./PatStore"));
+const PatProfile = lazy(() => import("./PatProfile"));
 
 function PatientApp({
   page,
   setPage,
   user,
+  setUser,
   appointments = [],
   setAppointments,
   prescriptions = [],
   analyses= [],
   setAnalyses,
-  users = [],
-  doctors: doctorList = [],
   refresh,
   products = [],
   cart,
@@ -37,7 +36,6 @@ function PatientApp({
   const myRx = prescriptions;
   const myAn = analyses;
 const latestAn = myAn.length ? myAn[0] : null;
-const doctors = doctorList.length ? doctorList : users; 
 if (page === "dashboard") {
     return (
       <PatDash
@@ -68,16 +66,6 @@ if (page === "dashboard") {
      return <PatDiet setPage={setPage} />; 
      }
 
-  if (page === "routine") {
-    return (
-      <PatRoutine
-        rx={myRx}
-        latestAn={latestAn}
-        setPage={setPage}
-      />
-    );
-  }
-
   if (page === "appointments") {
 return <PatAppts appts={myAppts} refresh={refresh} notify={notify} />;
   }
@@ -86,7 +74,6 @@ return <PatAppts appts={myAppts} refresh={refresh} notify={notify} />;
     return (
       <PatBook
         user={user}
-        doctors={doctors}
         latestAn={latestAn}
         appointments={myAppts}
         setAppointments={setAppointments}
@@ -97,7 +84,7 @@ return <PatAppts appts={myAppts} refresh={refresh} notify={notify} />;
     );
   }
 
-  if (page === "prescriptions") {
+  if (page === "skincare" || page === "routine" || page === "prescriptions") {
     return <PatRx rx={myRx} />;
   }
 
@@ -121,6 +108,7 @@ return <PatAppts appts={myAppts} refresh={refresh} notify={notify} />;
     return (
       <PatProfile
         user={user}
+        setUser={setUser}
         appts={myAppts}
         analyses={myAn}
         refresh={refresh}

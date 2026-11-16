@@ -8,6 +8,18 @@ export default function DataControls({ onLogout, notify, refresh }) {
   const [confirmAccount, setConfirmAccount] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  // Google-only accounts have no password — they type DELETE instead
+  const [hasPassword, setHasPassword] = useState(true);
+
+  const openAccountConfirm = async () => {
+    setConfirmAccount(true);
+    try {
+      const res = await API.get("/auth/me");
+      setHasPassword(res.data?.hasPassword !== false);
+    } catch {
+      setHasPassword(true);
+    }
+  };
 
   const deleteImages = async () => {
     setBusy("images");
@@ -24,12 +36,16 @@ export default function DataControls({ onLogout, notify, refresh }) {
   };
 
   const deleteAccount = async () => {
-    if (!password) return setError("Enter your password to confirm.");
+    if (hasPassword && !password) return setError("Enter your password to confirm.");
+    if (!hasPassword && password !== "DELETE") return setError("Type DELETE to confirm.");
     setBusy("account");
     setError("");
     try {
-      await API.delete("/auth/account", { data: { password } });
+      await API.delete("/auth/account", {
+        data: hasPassword ? { password } : { confirm: "DELETE" },
+      });
       localStorage.removeItem("token");
+      sessionStorage.removeItem("token");
       localStorage.removeItem("page");
       alert("Your account has been permanently deleted.");
       onLogout?.();
@@ -92,19 +108,19 @@ export default function DataControls({ onLogout, notify, refresh }) {
           </div>
 
           {!confirmAccount ? (
-            <button className="btn btn-dan btn-sm" onClick={() => setConfirmAccount(true)}>
+            <button className="btn btn-dan btn-sm" onClick={openAccountConfirm}>
               Delete my account
             </button>
           ) : (
             <div className="alert al-dan" style={{ marginBottom: 0 }}>
               <div style={{ width: "100%" }}>
                 <div style={{ fontWeight: 700, marginBottom: "0.6rem" }}>
-                  <AppIcon name="alert" /> This is permanent. Enter your password to confirm.
+                  <AppIcon name="alert" /> This is permanent. {hasPassword ? "Enter your password to confirm." : "Type DELETE to confirm."}
                 </div>
                 <input
                   className="form-i"
-                  type="password"
-                  placeholder="Your password"
+                  type={hasPassword ? "password" : "text"}
+                  placeholder={hasPassword ? "Your password" : "DELETE"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   style={{ marginBottom: "0.6rem" }}

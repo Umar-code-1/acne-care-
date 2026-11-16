@@ -7,6 +7,7 @@ import AdminAnalyses from "./AdminAnalyses";
 import AdminRx from "./AdminRx";
 import AdminProfile from "./AdminProfile";
 import AdminVerify from "./AdminVerify";
+import AdminPlatformFees from "./AdminPlatformFees";
 
 export default function AdminApp({
   page,
@@ -58,6 +59,9 @@ export default function AdminApp({
 
       case "verify":
       return <AdminVerify users={users} refresh={refresh} notify={notify} />;
+
+    case "platform-fees":
+      return <AdminPlatformFees notify={notify} />;
 
     default:
       return (

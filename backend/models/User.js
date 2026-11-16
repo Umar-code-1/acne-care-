@@ -4,7 +4,12 @@ const bcrypt   = require("bcryptjs");
 const userSchema = new mongoose.Schema({
   name:      { type: String, required: true },
   email:     { type: String, required: true, unique: true, lowercase: true, trim: true },
-  password:  { type: String, required: true, minlength: 6, select: false },
+  // Google accounts can exist without a password until the user sets one
+  password:  { type: String, required: function() { return !this.googleId; }, minlength: 6, select: false },
+  googleId:  { type: String, unique: true, sparse: true },
+  hasPassword: { type: Boolean, default: true },
+  passwordResetToken: { type: String, select: false },
+  passwordResetExpires: { type: Date, select: false },
   role:      { type: String,
                enum: ["patient","dermatologist","admin"],
                default: "patient" },
@@ -52,12 +57,14 @@ userSchema.pre("save", async function() {
   if (!this.avatar && this.name) {
     this.avatar = this.name.charAt(0).toUpperCase();
   }
-  if (!this.isModified("password")) return;
+  if (!this.isModified("password") || !this.password) return;
+  this.hasPassword = true;
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
 });
 
 userSchema.methods.matchPassword = async function(entered) {
+  if (!this.password || typeof entered !== "string") return false;
   return await bcrypt.compare(entered, this.password);
 };
 

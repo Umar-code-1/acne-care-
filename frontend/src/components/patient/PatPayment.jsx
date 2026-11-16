@@ -1,27 +1,42 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import API from "../../api";
 import AppIcon from "../shared/AppIcon";
 
+const RECEIPT_TYPES = "image/jpeg,image/png,application/pdf";
+
 const STATUS = {
   unpaid: { label: "Payment required", cls: "b-pending", icon: "⏳" },
-  pending_verification: { label: "Awaiting verification", cls: "b-completed", icon: "🔍" },
-  paid: { label: "Paid", cls: "b-confirmed", icon: "✅" },
+  pending_verification: { label: "Awaiting verification", cls: "b-cancelled", icon: "🔍" },
+  paid: { label: "Payment verified", cls: "b-confirmed", icon: "✅" },
   rejected: { label: "Payment rejected", cls: "b-cancelled", icon: "❌" },
 };
 
 export default function PatPayment({ appt, onBack, refresh, notify }) {
   const [bank, setBank] = useState(null);
+  const [bankError, setBankError] = useState("");
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState("");
   const [ref, setRef] = useState("");
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState("");
+  const replacementInput = useRef(null);
 
   useEffect(() => {
-API.get(`/payments/${appt._id}/details`)
+    if (preview) return () => URL.revokeObjectURL(preview);
+  }, [preview]);
+
+  useEffect(() => {
+    if (appt.payment === "paid" || appt.payment === "pending_verification") return;
+    const controller = new AbortController();
+    API.get(`/payments/${appt._id}/details`, { signal: controller.signal })
       .then((r) => setBank(r.data))
-      .catch(() => notify?.("Could not load payment details"));
-  }, []);
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        const message = err.response?.data?.message || "Could not load payment details. Please try again.";
+        setBankError(message);
+      });
+    return () => controller.abort();
+  }, [appt._id, appt.payment]);
 
   const copy = (text, key) => {
     navigator.clipboard?.writeText(text);
@@ -31,12 +46,11 @@ API.get(`/payments/${appt._id}/details`)
 
   const pickFile = (e) => {
     const f = e.target.files?.[0];
+    e.target.value = "";
     if (!f) return;
     if (f.size > 5 * 1024 * 1024) return notify?.("❌ File too large (max 5MB)");
-    if (preview) URL.revokeObjectURL(preview);
     setFile(f);
     setPreview(f.type.startsWith("image/") ? URL.createObjectURL(f) : "");
-    e.target.value = "";
   };
 
   const submit = async () => {
@@ -58,6 +72,7 @@ API.get(`/payments/${appt._id}/details`)
   };
 
   const st = STATUS[appt.payment] || STATUS.unpaid;
+  const amountText = `PKR ${Number(appt.fee || 0).toLocaleString()}`;
 
   const Row = ({ label, value, k }) => (
     <div style={{
@@ -84,10 +99,10 @@ API.get(`/payments/${appt._id}/details`)
       </div>
 
       {/* SUMMARY */}
-      <div className="card">
+      <div className="card payment-summary-card">
         <div className="card-h">
           <div className="card-t">Appointment Summary</div>
-          <span className={`badge ${st.cls}`}><AppIcon emoji={st.icon} /> {st.label}</span>
+          <span className={`badge payment-status-badge ${st.cls}`}><AppIcon emoji={st.icon} /> {st.label}</span>
         </div>
         <div className="card-b">
           {[
@@ -110,12 +125,12 @@ API.get(`/payments/${appt._id}/details`)
             marginTop: "0.85rem", padding: "0.85rem",
             background: "var(--pri-l)", borderRadius: "var(--r2)",
           }}>
-            <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>Amount due</span>
+            <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>{appt.payment === "paid" ? "Amount paid" : "Amount due"}</span>
             <span style={{
               fontFamily: "var(--font-d)", fontWeight: 800,
               fontSize: "1.35rem", color: "var(--pri)",
             }}>
-              PKR {appt.fee?.toLocaleString() || 0}
+              {amountText}
             </span>
           </div>
         </div>
@@ -127,7 +142,7 @@ API.get(`/payments/${appt._id}/details`)
           the consultation details shortly.
         </div>
       ) : appt.payment === "pending_verification" ? (
-        <div className="alert al-info">
+        <div className="alert al-dan">
           <AppIcon name="search" /> We've received your receipt and are verifying it. This usually takes a few
           hours. You'll be notified once confirmed.
         </div>
@@ -150,25 +165,29 @@ API.get(`/payments/${appt._id}/details`)
               <div className="card-t">Step 1 — Transfer the amount</div>
             </div>
             <div className="card-b">
-              {!bank ? (
+              {bankError ? (
+                <div className="alert al-warn"><AppIcon name="alert" /> {bankError}</div>
+              ) : !bank ? (
                 <div className="ps">Loading payment details…</div>
               ) : (
                 <>
                   <div className="alert al-info" style={{ fontSize: "0.82rem" }}>
-                    Send exactly <strong>PKR {appt.fee?.toLocaleString()}</strong> using
+                    Send exactly <strong>{amountText}</strong> using
                     your banking app, Raast, JazzCash or Easypaisa.
                   </div>
 
-                  <div style={{ fontWeight: 700, fontSize: "0.8rem", margin: "0.85rem 0 0.35rem" }}>
-                    <div style={{ fontSize: "0.82rem", color: "var(--text2)", marginBottom: "0.5rem" }}>
-                    Paying: <strong>{bank.doctorName}</strong>
+                  <div style={{ fontSize: "0.82rem", color: "var(--text2)", margin: "0.85rem 0 0.5rem" }}>
+                    Transfer to: <strong>{bank.doctorName || appt.dname || "Your dermatologist"}</strong>
                   </div>
-                    <AppIcon name="wallet" /> Bank Transfer
-                  </div>
-                  <Row label="Bank" value={bank.bankName} k="bn" />
-                  <Row label="Account title" value={bank.accountTitle} k="at" />
-                  <Row label="Account number" value={bank.accountNumber} k="an" />
-                  <Row label="IBAN" value={bank.iban} k="ib" />
+                  {bank.hasBankTransfer && <>
+                    <div style={{ fontWeight: 700, fontSize: "0.8rem", margin: "0.85rem 0 0.35rem" }}>
+                      <AppIcon name="wallet" /> Bank Transfer
+                    </div>
+                    <Row label="Bank" value={bank.bankName} k="bn" />
+                    <Row label="Account title" value={bank.accountTitle} k="at" />
+                    <Row label="Account number" value={bank.accountNumber} k="an" />
+                    {bank.iban && <Row label="IBAN" value={bank.iban} k="ib" />}
+                  </>}
 
                   {(bank.jazzcash || bank.easypaisa) && (
                     <>
@@ -203,7 +222,7 @@ API.get(`/payments/${appt._id}/details`)
               {!file ? (
                 <label className="upload-zone">
                   <input type="file" className="upload-input"
-                    accept="image/jpeg,image/png,application/pdf"
+                    accept={RECEIPT_TYPES}
                     onChange={pickFile} />
                   <div style={{ fontSize: "2.2rem", marginBottom: "0.5rem" }}><AppIcon name="document" /></div>
                   <div style={{ fontWeight: 700, marginBottom: "0.3rem" }}>
@@ -214,8 +233,7 @@ API.get(`/payments/${appt._id}/details`)
                   </div>
                 </label>
               ) : (
-                <div style={{
-                  display: "flex", alignItems: "center", gap: "0.85rem",
+                <div className="payment-receipt-preview" style={{
                   border: "2px solid var(--ok)", borderRadius: "var(--r)",
                   padding: "0.85rem", background: "var(--ok-l)", marginBottom: "1rem",
                 }}>
@@ -236,16 +254,22 @@ API.get(`/payments/${appt._id}/details`)
                       {file.name}
                     </div>
                   </div>
-                  <button className="btn btn-ghost btn-sm"
-                    aria-label="Remove receipt"
-                    onClick={() => { setFile(null); setPreview(""); }}>
-                    <AppIcon name="trash" />
-                  </button>
+                  <input ref={replacementInput} type="file" hidden accept={RECEIPT_TYPES} onChange={pickFile} />
+                  <div className="payment-receipt-actions">
+                    <button type="button" className="btn btn-pri" disabled={busy}
+                      onClick={() => replacementInput.current?.click()}>
+                      <AppIcon name="gallery" /> Change picture
+                    </button>
+                    <button type="button" className="btn btn-pri" disabled={busy}
+                      onClick={() => { setFile(null); setPreview(""); }}>
+                      <AppIcon name="trash" /> Delete receipt
+                    </button>
+                  </div>
                 </div>
               )}
 
               <button className="btn btn-pri btn-full"
-                onClick={submit} disabled={busy || !file}>
+                onClick={submit} disabled={busy || !file || !bank || !!bankError}>
                 {busy ? <><AppIcon name="clock" /> Submitting…</> : "Submit Payment Receipt"}
               </button>
 

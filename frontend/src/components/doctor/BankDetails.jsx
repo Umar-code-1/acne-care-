@@ -18,6 +18,10 @@ export default function BankDetails({ user, notify, refresh }) {
   const hasAny = f.accountNumber || f.jazzcash || f.easypaisa;
 
   const save = async () => {
+    const hasBankFields = f.bankName.trim() || f.accountTitle.trim() || f.accountNumber.trim() || f.iban.trim();
+    if (hasBankFields && !(f.bankName.trim() && f.accountTitle.trim() && f.accountNumber.trim())) {
+      return notify?.("Enter the bank name, account title and account number together, or clear the bank fields.");
+    }
     setBusy(true);
     try {
       await API.put("/auth/profile", f);

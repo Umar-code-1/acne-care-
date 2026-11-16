@@ -104,7 +104,22 @@ def preprocess(image_bytes: bytes):
     orig.thumbnail((800, 800))
     orig_arr = np.array(orig, dtype=np.uint8)
 
-    model_arr = np.array(img.resize((IMG_SIZE, IMG_SIZE)), dtype=np.float32)
+    # Keep the detected face large in the model input instead of shrinking the
+    # whole portrait (and its background) into a square.
+    gray = cv2.equalizeHist(cv2.cvtColor(orig_arr, cv2.COLOR_RGB2GRAY))
+    faces = FACE_CASCADE.detectMultiScale(gray, 1.1, 5, minSize=(60, 60))
+    if len(faces):
+        x, y, width, height = max(faces, key=lambda box: box[2] * box[3])
+        image_height, image_width = orig_arr.shape[:2]
+        side = min(int(max(width, height) * 1.8), image_width, image_height)
+        center_x, center_y = x + width // 2, y + height // 2
+        left = max(0, min(center_x - side // 2, image_width - side))
+        top = max(0, min(center_y - side // 2, image_height - side))
+        model_source = Image.fromarray(orig_arr[top:top + side, left:left + side])
+    else:
+        model_source = img
+
+    model_arr = np.array(model_source.resize((IMG_SIZE, IMG_SIZE)), dtype=np.float32)
     return orig_arr, model_arr
 
 

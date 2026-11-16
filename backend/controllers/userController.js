@@ -27,6 +27,32 @@ const getAllUsers = async (req, res) => {
   }
 };
 
+const createUser = async (req, res) => {
+  const { name, email, password, role, pmdcNumber } = req.body || {};
+  if (role !== "patient" && role !== "dermatologist") {
+    return res.status(400).json({ message: "Choose Patient or Dermatologist." });
+  }
+  if (typeof name !== "string" || !name.trim() || typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    return res.status(400).json({ message: "Enter a full name and a valid email address." });
+  }
+  if (typeof password !== "string" || password.length < 6 || Buffer.byteLength(password, "utf8") > 72) {
+    return res.status(400).json({ message: "Enter a password of at least 6 characters and no more than 72 bytes." });
+  }
+  const pmdc = typeof pmdcNumber === "string" ? pmdcNumber.trim().toUpperCase() : "";
+  if (role === "dermatologist" && !/^\d{4,6}-[A-Z]$/.test(pmdc)) {
+    return res.status(400).json({ message: "Enter a valid PMDC registration number, such as 12345-P." });
+  }
+
+  try {
+    const user = await User.create({ name: name.trim(), email: email.trim().toLowerCase(), password, role,
+      pmdcNumber: role === "dermatologist" ? pmdc : "" });
+    return res.status(201).json(clean(user));
+  } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ message: "Email already registered." });
+    return res.status(500).json({ message: "Could not create the account. Please try again." });
+  }
+};
+
 // GET /api/users/pending-doctors   (admin) — FR-12
 const getPendingDoctors = async (req, res) => {
   try {
@@ -91,8 +117,7 @@ const getUserById = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-const path = require("path");
-const fs = require("fs");
+const { saveFile, deleteFile, sendStoredFile } = require("../services/fileStorage");
 
 // POST /api/users/license   (doctor uploads licence)
 const uploadLicenseDoc = async (req, res) => {
@@ -104,7 +129,10 @@ const uploadLicenseDoc = async (req, res) => {
       return res.status(403).json({ message: "Only dermatologists upload licences" });
     }
 
-    user.licenseDoc = `/uploads/licenses/${req.file.filename}`;
+    // naya licence aaya to purana hata do
+    const oldLicense = user.licenseDoc;
+    user.licenseDoc = await saveFile(req.file, { kind: "licenses", name: `license-${user._id}` });
+    if (oldLicense) await deleteFile(oldLicense);
     if (req.body.pmdcNumber) user.pmdcNumber = req.body.pmdcNumber.trim();
     user.rejectionReason = "";
     await user.save();
@@ -122,17 +150,14 @@ const getLicenseDoc = async (req, res) => {
     if (!user || !user.licenseDoc) {
       return res.status(404).json({ message: "No licence on file" });
     }
-    const filePath = path.join(__dirname, "..", "uploads", "licenses", path.basename(user.licenseDoc));
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ message: "Licence file missing" });
-    }
-    res.sendFile(filePath);
+    await sendStoredFile(res, user.licenseDoc, "Licence file missing");
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 module.exports = {
   getAllUsers,
+  createUser,
   getPendingDoctors,
   verifyDoctor,
   setUserStatus,

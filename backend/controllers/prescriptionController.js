@@ -1,6 +1,8 @@
 const Prescription = require("../models/Prescription");
 const Appointment  = require("../models/Appointment");
 const User         = require("../models/User");
+const Message      = require("../models/Message");
+const { createNotifications } = require("../services/notifications");
 
 // DB shape ko frontend shape mein badlo
 const format = (p) => ({
@@ -41,10 +43,6 @@ const createPrescription = async (req, res) => {
     if (!patientId) {
       return res.status(400).json({ message: "Patient is required" });
     }
-    if (!Array.isArray(meds) || meds.length === 0) {
-      return res.status(400).json({ message: "At least one medicine is required" });
-    }
-
     const patient = await User.findById(patientId);
     if (!patient || patient.role !== "patient") {
       return res.status(404).json({ message: "Patient not found" });
@@ -59,14 +57,17 @@ const createPrescription = async (req, res) => {
       if (appt.doctor.toString() !== req.user._id.toString()) {
         return res.status(403).json({ message: "This appointment is not yours" });
       }
+      if (appt.patient.toString() !== patientId.toString()) {
+        return res.status(400).json({ message: "The selected appointment belongs to another patient" });
+      }
     }
 
     const rx = await Prescription.create({
       appointment: appointmentId || null,
       patient:     patientId,
       doctor:      req.user._id,
-      meds,
-      skincare:    skincare || [],
+      meds:        Array.isArray(meds) ? meds : [],
+      skincare:    Array.isArray(skincare) ? skincare : [],
       instructions: instructions || "",
       dietAdvice:   dietAdvice || "",
       followUp:     followUp || "",
@@ -74,7 +75,20 @@ const createPrescription = async (req, res) => {
 
     // appointment ko completed mark kar do
     if (appointmentId) {
-      await Appointment.findByIdAndUpdate(appointmentId, { status: "completed" });
+      await Appointment.findByIdAndUpdate(appointmentId, { status: "completed", $unset: { completionUndoUntil: 1 } });
+    }
+
+    if (instructions?.trim()) {
+      const doctorName = req.user.name?.startsWith("Dr.") ? req.user.name : `Dr. ${req.user.name || "your dermatologist"}`;
+      await createNotifications({
+        recipients: [{ id: patientId, targetPage: "prescriptions" }],
+        actor: req.user._id,
+        appointment: appointmentId || undefined,
+      prescription: rx._id,
+        type: "doctor_instructions",
+        title: `New instructions from ${doctorName}`,
+        message: "Your dermatologist sent you new skincare instructions.",
+      });
     }
 
     res.status(201).json(format(await populated(rx._id)));
@@ -91,7 +105,22 @@ const getMyPrescriptions = async (req, res) => {
       .populate("patient", "name email skinType")
       .populate("doctor", "name email spec qual")
       .sort({ createdAt: -1 });
-    res.json(list.map(format));
+    const unreadCounts = await Message.aggregate([
+      {
+        $match: {
+          prescription: { $in: list.map((prescription) => prescription._id) },
+          recipient: req.user._id,
+          channel: { $ne: "instruction" },
+          read: { $ne: true },
+        },
+      },
+      { $group: { _id: "$prescription", count: { $sum: 1 } } },
+    ]);
+    const unreadByPrescription = new Map(unreadCounts.map(({ _id, count }) => [String(_id), count]));
+    res.json(list.map((prescription) => ({
+      ...format(prescription),
+      unreadChatCount: unreadByPrescription.get(String(prescription._id)) || 0,
+    })));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -104,7 +133,22 @@ const getDoctorPrescriptions = async (req, res) => {
       .populate("patient", "name email skinType")
       .populate("doctor", "name email spec qual")
       .sort({ createdAt: -1 });
-    res.json(list.map(format));
+    const unreadCounts = await Message.aggregate([
+      {
+        $match: {
+          prescription: { $in: list.map((prescription) => prescription._id) },
+          recipient: req.user._id,
+          channel: { $ne: "instruction" },
+          read: { $ne: true },
+        },
+      },
+      { $group: { _id: "$prescription", count: { $sum: 1 } } },
+    ]);
+    const unreadByPrescription = new Map(unreadCounts.map(({ _id, count }) => [String(_id), count]));
+    res.json(list.map((prescription) => ({
+      ...format(prescription),
+      unreadChatCount: unreadByPrescription.get(String(prescription._id)) || 0,
+    })));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -168,6 +212,7 @@ const updatePrescription = async (req, res) => {
     }
 
     const { meds, skincare, instructions, dietAdvice, followUp } = req.body;
+    const previousInstructions = rx.instructions;
     if (meds)                     rx.meds = meds;
     if (skincare)                 rx.skincare = skincare;
     if (instructions !== undefined) rx.instructions = instructions;
@@ -175,6 +220,18 @@ const updatePrescription = async (req, res) => {
     if (followUp !== undefined)     rx.followUp = followUp;
 
     await rx.save();
+    if (typeof instructions === "string" && instructions.trim() && instructions !== previousInstructions) {
+      const doctorName = req.user.name?.startsWith("Dr.") ? req.user.name : `Dr. ${req.user.name || "your dermatologist"}`;
+      await createNotifications({
+        recipients: [{ id: rx.patient, targetPage: "prescriptions" }],
+        actor: req.user._id,
+        appointment: rx.appointment || undefined,
+      prescription: rx._id,
+        type: "doctor_instructions",
+        title: `${doctorName} updated your instructions`,
+        message: "Your skincare instructions have been updated. Open your skincare plans to review them.",
+      });
+    }
     res.json(format(await populated(rx._id)));
   } catch (error) {
     res.status(500).json({ message: error.message });

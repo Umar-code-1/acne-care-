@@ -1,5 +1,7 @@
 const Appointment = require("../models/Appointment");
 const User = require("../models/User");
+const { createNotifications, getAdminIds } = require("../services/notifications");
+const COMPLETION_UNDO_MS = 5 * 60 * 1000;
 
 // DB shape ko frontend shape mein convert karo
 const format = (a) => ({
@@ -16,6 +18,7 @@ const format = (a) => ({
   date:   a.date,
   time:   a.time,
   status: a.status,
+  completionUndoUntil: a.status === "completed" ? a.completionUndoUntil : undefined,
   sev:    a.severity,
   atype:  a.acneType,
   link:   a.meetingLink || null,
@@ -132,6 +135,12 @@ if (!doctor.isVerified) {
     }
 
     const apptType = type === "physical" ? "physical" : "online";
+    const consultationFee = Number(apptType === "online" ? doctor.ofee : doctor.fee);
+    if (!Number.isFinite(consultationFee) || consultationFee <= 0) {
+      return res.status(400).json({
+        message: "This dermatologist has not set a valid consultation fee yet. Please choose another dermatologist or try again later.",
+      });
+    }
 
     const appointment = await Appointment.create({
       patient:  req.user._id,
@@ -142,12 +151,25 @@ if (!doctor.isVerified) {
       time,
       severity: severity || "",
       acneType: acneType || "",
-      consultationFee: apptType === "online" ? (doctor.ofee || 0) : (doctor.fee || 0),
+      consultationFee,
     });
 
     const populated = await Appointment.findById(appointment._id)
       .populate("doctor", "name email spec")
       .populate("patient", "name email phone");
+
+    const admins = await getAdminIds();
+    await createNotifications({
+      recipients: [
+        { id: doctorId, targetPage: "appointments" },
+        ...admins.map((id) => ({ id, targetPage: "appointments" })),
+      ],
+      actor: req.user._id,
+      appointment: appointment._id,
+      type: "appointment_booked",
+      title: "New appointment request",
+      message: `${req.user.name || "A patient"} requested an appointment for ${date} at ${time}.`,
+    });
 
     res.status(201).json(format(populated));
   } catch (error) {
@@ -180,7 +202,13 @@ const getDoctorAppointments = async (req, res) => {
       .populate("doctor", "name spec")
       .sort({ createdAt: -1 });
 
-    res.json(appointments.map(format));
+    res.json(appointments.map((appointment) => ({
+      ...format(appointment),
+      pemail: appointment.patient?.email || "",
+      page: appointment.patient?.age || "",
+      pgender: appointment.patient?.gender || "",
+      pskinType: appointment.patient?.skinType || "",
+    })));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -189,7 +217,8 @@ const getDoctorAppointments = async (req, res) => {
 // PUT /api/appointments/:id  — status / link / notes update
 const updateAppointment = async (req, res) => {
   try {
-    const { status, meetingLink, notes } = req.body;
+    let { status } = req.body;
+    const { meetingLink, notes, undoCompletion } = req.body;
 
     const appointment = await Appointment.findById(req.params.id);
     if (!appointment) {
@@ -201,9 +230,25 @@ const updateAppointment = async (req, res) => {
     const isPatient = appointment.patient.toString() === me;
     const isDoctor  = appointment.doctor.toString() === me;
     const isAdmin   = req.user.role === "admin";
+    const previousStatus = appointment.status;
+    const previousMeetingLink = appointment.meetingLink;
 
     if (!isPatient && !isDoctor && !isAdmin) {
       return res.status(403).json({ message: "Not authorized for this appointment" });
+    }
+
+    if (undoCompletion === true) {
+      if (!isDoctor || req.user.role !== "dermatologist") {
+        return res.status(403).json({ message: "Only the assigned dermatologist can undo completion." });
+      }
+      const now = new Date();
+      if (previousStatus !== "completed" || !appointment.completionUndoUntil || appointment.completionUndoUntil <= now) {
+        return res.status(409).json({ message: "This appointment can no longer be undone." });
+      }
+      appointment.$where = { status: "completed", completionUndoUntil: { $gt: now } };
+      status = "confirmed";
+    } else if (isDoctor && !isAdmin && previousStatus === "completed" && status && status !== "completed") {
+      return res.status(409).json({ message: "Use Undo completion to reopen this appointment." });
     }
  
     // patient sirf cancel kar sakta hai
@@ -211,7 +256,7 @@ const updateAppointment = async (req, res) => {
       if (status && status !== "cancelled") {
         return res.status(403).json({ message: "Patients can only cancel appointments" });
       }
-      if (meetingLink !== undefined || paymentStatus !== undefined) {
+      if (meetingLink !== undefined || req.body.paymentStatus !== undefined) {
         return res.status(403).json({ message: "Not allowed to change this field" });
       }
     }
@@ -226,7 +271,20 @@ if ((status === "completed" || meetingLink) && appointment.paymentStatus !== "pa
     if (meetingLink && appointment.status === "cancelled") {
       return res.status(400).json({ message: "Cannot add a meeting link to a cancelled appointment" });
     }
-    if (status)                  appointment.status        = status;
+    if (status === "completed" && previousStatus !== "completed" && appointment.type === "online"
+      && (!previousMeetingLink?.trim() || (meetingLink !== undefined && !meetingLink))) {
+      return res.status(400).json({ message: "Share the meeting link before marking this appointment complete." });
+    }
+    if (status && status !== previousStatus) {
+      if (isDoctor && previousStatus === "confirmed" && status === "completed") {
+        appointment.$where = { status: "confirmed", paymentStatus: "paid" };
+        if (appointment.type === "online") appointment.$where.meetingLink = previousMeetingLink;
+        appointment.completionUndoUntil = new Date(Date.now() + COMPLETION_UNDO_MS);
+      } else {
+        appointment.completionUndoUntil = undefined;
+      }
+      appointment.status = status;
+    }
     
     if (meetingLink !== undefined) appointment.meetingLink = meetingLink;
     if (notes !== undefined)     appointment.notes         = notes;
@@ -237,8 +295,35 @@ if ((status === "completed" || meetingLink) && appointment.paymentStatus !== "pa
       .populate("doctor", "name email spec")
       .populate("patient", "name email phone");
 
+    if (meetingLink && meetingLink !== previousMeetingLink) {
+      await createNotifications({
+        recipients: [{ id: appointment.patient, targetPage: "appointments" }],
+        actor: req.user._id,
+        appointment: appointment._id,
+        type: "meeting_link",
+        title: "Your meeting link is ready",
+        message: `Your dermatologist shared a meeting link for ${appointment.date} at ${appointment.time}. Open My Appointments to join.`,
+      });
+    }
+    if (status && status !== previousStatus) {
+      const recipient = isPatient
+        ? { id: appointment.doctor, targetPage: "appointments" }
+        : { id: appointment.patient, targetPage: "appointments" };
+      await createNotifications({
+        recipients: [recipient],
+        actor: req.user._id,
+        appointment: appointment._id,
+        type: "appointment_status",
+        title: "Appointment status updated",
+        message: `The appointment on ${appointment.date} at ${appointment.time} is now ${status}.`,
+      });
+    }
+
     res.json(format(populated));
   } catch (error) {
+    if (error.name === "DocumentNotFoundError") {
+      return res.status(409).json({ message: "The appointment changed. Refresh the list and try again." });
+    }
     res.status(500).json({ message: error.message });
   }
 };

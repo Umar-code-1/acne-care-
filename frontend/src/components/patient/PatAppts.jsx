@@ -1,10 +1,20 @@
 // src/components/patient/PatAppts.jsx
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import AppIcon from "../shared/AppIcon";
 import PatPayment from "./PatPayment";
 function PatAppts({ appts = [], refresh, notify }) {
   const [filter, setFilter] = useState("all");
-const [payingFor, setPayingFor] = useState(null);
+  const [paymentAppointmentId, setPaymentAppointmentId] = useState(null);
+  const payingFor = appts.find((appointment) => appointment.id === paymentAppointmentId);
+  const awaitingVerification = payingFor?.payment === "pending_verification";
+
+  useEffect(() => {
+    if (!awaitingVerification || !refresh) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") refresh();
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [awaitingVerification, refresh]);
   const fil =
     filter === "all"
       ? appts
@@ -14,7 +24,7 @@ const [payingFor, setPayingFor] = useState(null);
     return (
       <PatPayment
         appt={payingFor}
-        onBack={() => setPayingFor(null)}
+        onBack={() => setPaymentAppointmentId(null)}
         refresh={refresh}
         notify={notify}
       />
@@ -27,12 +37,14 @@ const [payingFor, setPayingFor] = useState(null);
         <div className="ps">Track all your consultations</div>
       </div>
 
-      <div className="tab-bar">
+      <div className="tab-bar patient-appointments-filters" role="group" aria-label="Filter appointments">
         {["all", "pending", "confirmed", "completed", "cancelled"].map(
           (s) => (
             <button
               key={s}
+              type="button"
               className={`tab ${filter === s ? "act" : ""}`}
+              aria-pressed={filter === s}
               onClick={() => setFilter(s)}
             >
               {s.charAt(0).toUpperCase() + s.slice(1)}{" "}
@@ -54,7 +66,7 @@ const [payingFor, setPayingFor] = useState(null);
         </div>
       ) : (
         fil.map((a) => (
-          <div key={a.id} className="card">
+          <div key={a.id} className="card" data-notification-appointment={a.id} tabIndex={-1}>
             <div className="card-b">
               <div style={{ display: "flex", gap: "0.85rem", flexWrap: "wrap" }}>
                 <div style={{ flex: 1 }}>
@@ -114,11 +126,11 @@ const [payingFor, setPayingFor] = useState(null);
                       {a.atype} acne
                     </div>
                   )}
-                  {a.payment !== "paid" && a.status !== "cancelled" && (
+                  {(a.payment === "paid" || a.status !== "cancelled") && (
                     <button className="btn btn-pri btn-sm"
                       style={{ marginTop: "0.6rem" }}
-                      onClick={() => setPayingFor(a)}>
-                      {a.payment === "pending_verification"
+                      onClick={() => setPaymentAppointmentId(a.id)}>
+                      {a.payment === "paid" || a.payment === "pending_verification"
                         ? <><AppIcon name="search" /> View payment status</>
                         : a.payment === "rejected"
                         ? <><AppIcon name="alert" /> Retry payment</>

@@ -1,22 +1,61 @@
 // src/components/doctor/DocRx.jsx
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import AppIcon from "../shared/AppIcon";
-import { MEDS, SKINCARE_STEPS } from "../../data/mockData";
 import API from "../../api";
 import RxCard from "../shared/RxCard";
+import ScanImage from "../shared/ScanImage";
 
-function DocRx({ user, appts = [], rx = [], analyses = [], refresh, notify }) {
+function DocRx({ appts = [], rx = [], refresh, notify }) {
   const [tab, setTab] = useState("list");
   const [selAppt, setSelAppt] = useState("");
-  const [selMeds, setSelMeds] = useState([]);
-  const [selSkincare, setSelSkincare] = useState([]);
   const [inst, setInst] = useState("");
-  const [diet, setDiet] = useState("");
   const [fu, setFu] = useState("");
   const [saving, setSaving] = useState(false);
+  const [patientDetailsOpen, setPatientDetailsOpen] = useState(false);
+  const [patientScans, setPatientScans] = useState([]);
+  const [loadingPatientScans, setLoadingPatientScans] = useState(false);
+  const [patientScansError, setPatientScansError] = useState("");
+  const [unreadChatCounts, setUnreadChatCounts] = useState(null);
+
+  useEffect(() => {
+    if (tab !== "list") return undefined;
+    let active = true;
+    let inFlight = false;
+    const loadUnreadCounts = async () => {
+      if (inFlight || document.visibilityState === "hidden") return;
+      inFlight = true;
+      try {
+        const { data } = await API.get("/messages/unread-counts");
+        if (active && data && typeof data === "object") setUnreadChatCounts(data);
+      } catch {
+        // Keep the initial counts from the prescription list if polling is unavailable.
+      } finally {
+        inFlight = false;
+      }
+    };
+    loadUnreadCounts();
+    const intervalId = window.setInterval(loadUnreadCounts, 10000);
+    document.addEventListener("visibilitychange", loadUnreadCounts);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", loadUnreadCounts);
+    };
+  }, [tab]);
 
   const rxId = (r) => String(r.apid || "");
-
+  const formatAppointmentDate = (value) => {
+    const date = new Date(`${String(value || "").slice(0, 10)}T12:00:00`);
+    return Number.isNaN(date.valueOf())
+      ? "Date unavailable"
+      : new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
+  };
+  const formatAppointmentFullDate = (value) => {
+    const date = new Date(`${String(value || "").slice(0, 10)}T12:00:00`);
+    return Number.isNaN(date.valueOf())
+      ? "Date unavailable"
+      : new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
+  };
   // confirmed ya completed — jin par abhi tak plan nahi bana
   const openAppts = appts.filter(
     (a) =>
@@ -25,56 +64,44 @@ function DocRx({ user, appts = [], rx = [], analyses = [], refresh, notify }) {
   );
 
   const curAppt = appts.find((a) => String(a._id || a.id) === String(selAppt));
+  const patientAppointments = curAppt
+    ? appts.filter((appointment) => String(appointment.pid) === String(curAppt.pid))
+    : [];
+  const patientPlans = curAppt
+    ? rx.filter((plan) => String(plan.pid) === String(curAppt.pid))
+    : [];
 
-  const sugMeds = curAppt ? (MEDS[curAppt.sev] || MEDS.Mild || []) : [];
-
-  const skinType =
-    analyses.find((a) => String(a.pid) === String(curAppt?.pid))?.skinType ||
-    "Normal";
-
-  const skincareSteps = curAppt
-    ? SKINCARE_STEPS[skinType] || SKINCARE_STEPS.Normal
-    : null;
-
-  const toggleMed = (med) =>
-    setSelMeds((prev) =>
-      prev.some((m) => m.n === med.n)
-        ? prev.filter((m) => m.n !== med.n)
-        : [...prev, med]
-    );
-
-  const toggleSkincare = (step) =>
-    setSelSkincare((prev) =>
-      prev.includes(step) ? prev.filter((s) => s !== step) : [...prev, step]
-    );
+  const openPatientDetails = async () => {
+    if (!curAppt?.pid) return;
+    setPatientDetailsOpen(true);
+    setLoadingPatientScans(true);
+    setPatientScansError("");
+    try {
+      const { data } = await API.get(`/scans/patient/${curAppt.pid}`);
+      setPatientScans(Array.isArray(data) ? data : []);
+    } catch (error) {
+      setPatientScansError(error.response?.data?.message || "Could not load scan history.");
+      setPatientScans([]);
+    } finally {
+      setLoadingPatientScans(false);
+    }
+  };
 
   const resetForm = () => {
     setSelAppt("");
-    setSelMeds([]);
-    setSelSkincare([]);
     setInst("");
-    setDiet("");
     setFu("");
   };
 
   const save = async () => {
-    if (!curAppt || selMeds.length === 0) return;
+    if (!curAppt || !inst.trim() || !fu) return;
     setSaving(true);
-
-    const morningCount = skincareSteps?.morning?.length || 0;
 
     try {
       await API.post("/prescriptions", {
         patientId: curAppt.pid,
         appointmentId: curAppt._id || curAppt.id,
-        meds: selMeds,
-        skincare: selSkincare.map((s) => ({
-          product: s,
-          step: skincareSteps?.morning?.includes(s) ? "Morning" : "Night",
-          tip: "Apply as directed",
-        })),
         instructions: inst,
-        dietAdvice: diet,
         followUp: fu,
       });
 
@@ -87,47 +114,6 @@ function DocRx({ user, appts = [], rx = [], analyses = [], refresh, notify }) {
     } finally {
       setSaving(false);
     }
-  };
-
-  const stepRow = (step) => {
-    const selected = selSkincare.includes(step);
-    return (
-      <div
-        key={step}
-        onClick={() => toggleSkincare(step)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "0.6rem",
-          padding: "0.5rem 0.75rem",
-          border: selected ? "2px solid var(--sec)" : "1.5px solid var(--border)",
-          borderRadius: "var(--r2)",
-          cursor: "pointer",
-          marginBottom: "0.35rem",
-          background: selected ? "var(--sec-l)" : "var(--bg)",
-          fontSize: "0.84rem",
-          fontWeight: 500,
-        }}
-      >
-        <div
-          style={{
-            width: 16,
-            height: 16,
-            borderRadius: 50,
-            border: "2px solid var(--sec)",
-            background: selected ? "var(--sec)" : "transparent",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#fff",
-            fontSize: "0.6rem",
-          }}
-        >
-          {selected ? "✓" : ""}
-        </div>
-        <div>{step}</div>
-      </div>
-    );
   };
 
   return (
@@ -171,7 +157,10 @@ function DocRx({ user, appts = [], rx = [], analyses = [], refresh, notify }) {
           </div>
         ) : (
           rx.map((p) => (
-            <RxCard key={p._id || p.id} rx={p} showPatient showDoctor />
+            <RxCard key={p._id || p.id} rx={{
+              ...p,
+              unreadChatCount: unreadChatCounts?.[String(p._id || p.id)] ?? p.unreadChatCount ?? 0,
+            }} showPatient showDoctor instructionMode="doctor" />
           ))
         ))}
 
@@ -191,131 +180,33 @@ function DocRx({ user, appts = [], rx = [], analyses = [], refresh, notify }) {
               <div style={{ display: "grid", gap: "1.1rem" }}>
                 <div className="form-g">
                   <label className="form-l">Select Appointment</label>
-                  <select
-                    className="form-i"
-                    value={selAppt}
-                    onChange={(e) => {
-                      setSelAppt(e.target.value);
-                      setSelMeds([]);
-                      setSelSkincare([]);
-                    }}
-                  >
-                    <option value="">-- Select Appointment --</option>
-                    {openAppts.map((a) => (
-                      <option key={a._id || a.id} value={a._id || a.id}>
-                        {a.pname} • {a.date} • {a.sev || "N/A"} •{" "}
-                        {a.atype || "N/A"}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="doctor-plan-select-wrap">
+                    <select
+                      className="form-i doctor-plan-appointment-select"
+                      value={selAppt}
+                      onChange={(e) => setSelAppt(e.target.value)}
+                    >
+                      <option value="">-- Select Appointment --</option>
+                      {openAppts.map((a) => (
+                        <option key={a._id || a.id} value={a._id || a.id}>
+                          {a.pname} • {formatAppointmentDate(a.date)}
+                        </option>
+                      ))}
+                    </select>
+                    <AppIcon name="arrowDown" className="doctor-plan-select-arrow" />
+                  </div>
                 </div>
 
                 {curAppt && (
-                  <div className="alert al-info">
-                    Patient <strong>{curAppt.pname}</strong> • Acne{" "}
-                    <strong>{curAppt.atype || "N/A"}</strong> • Severity{" "}
-                    <strong>{curAppt.sev || "N/A"}</strong> • Skin{" "}
-                    <strong>{skinType}</strong>
-                  </div>
-                )}
-
-                {/* Medications */}
-                {curAppt && (
                   <>
-                    <div className="form-l" style={{ marginBottom: "0.6rem" }}>
-                      Select Medications for {curAppt.sev || "Mild"} acne
+                    <div className="doctor-plan-selected-appointment">
+                      <div><span>Patient</span><strong>{curAppt.pname}</strong></div>
+                      <div><span>Date</span><strong>{formatAppointmentFullDate(curAppt.date)}</strong></div>
+                      <div className="doctor-plan-appointment-id"><span>Full Appointment ID</span><code>{String(curAppt._id || curAppt.id || "")}</code></div>
                     </div>
-                    {sugMeds.map((med) => {
-                      const selected = selMeds.some((m) => m.n === med.n);
-                      return (
-                        <div
-                          key={med.n}
-                          className="med-item"
-                          style={{
-                            cursor: "pointer",
-                            border: selected
-                              ? "2px solid var(--pri)"
-                              : "1px solid var(--border)",
-                          }}
-                          onClick={() => toggleMed(med)}
-                        >
-                          <div className="med-h">
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "0.6rem",
-                              }}
-                            >
-                              <div
-                                style={{
-                                  width: 18,
-                                  height: 18,
-                                  borderRadius: 50,
-                                  border: "2px solid var(--pri)",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  fontSize: "0.65rem",
-                                  background: selected
-                                    ? "var(--pri)"
-                                    : "transparent",
-                                  color: selected ? "#fff" : "transparent",
-                                }}
-                              >
-                                {selected ? "✓" : ""}
-                              </div>
-                              <span className="med-n">{med.n}</span>
-                            </div>
-                            <span
-                              className={`mbt ${
-                                med.t === "Oral" ? "mb-o" : "mb-t"
-                              }`}
-                            >
-                              {med.t}
-                            </span>
-                          </div>
-                          <div className="med-d">{med.u}</div>
-                          <div className="med-d" style={{ marginTop: "0.2rem" }}>
-                            Duration: {med.d}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </>
-                )}
-
-                {/* Skincare routine */}
-                {skincareSteps && (
-                  <>
-                    <div className="form-l" style={{ marginBottom: "0.6rem" }}>
-                      Skincare Routine Steps ({selSkincare.length} selected)
-                    </div>
-
-                    <div
-                      style={{
-                        fontWeight: 700,
-                        fontSize: "0.8rem",
-                        color: "var(--acc)",
-                        marginBottom: "0.4rem",
-                      }}
-                    >
-                      Morning Routine
-                    </div>
-                    {skincareSteps.morning.map(stepRow)}
-
-                    <div
-                      style={{
-                        fontWeight: 700,
-                        fontSize: "0.8rem",
-                        color: "var(--info)",
-                        marginBottom: "0.4rem",
-                        marginTop: "0.75rem",
-                      }}
-                    >
-                      Night Routine
-                    </div>
-                    {skincareSteps.night.map(stepRow)}
+                    <button type="button" className="btn btn-ghost doctor-plan-patient-details-button" onClick={openPatientDetails}>
+                      View all patient information
+                    </button>
                   </>
                 )}
 
@@ -326,16 +217,6 @@ function DocRx({ user, appts = [], rx = [], analyses = [], refresh, notify }) {
                     placeholder="E.g., Avoid sun exposure. Use SPF 30 daily. Do not pop pimples..."
                     value={inst}
                     onChange={(e) => setInst(e.target.value)}
-                  />
-                </div>
-
-                <div className="form-g">
-                  <label className="form-l">Diet Advice</label>
-                  <textarea
-                    className="form-i"
-                    placeholder="E.g., Avoid dairy and sugar. Drink 8–10 glasses water daily..."
-                    value={diet}
-                    onChange={(e) => setDiet(e.target.value)}
                   />
                 </div>
 
@@ -353,7 +234,7 @@ function DocRx({ user, appts = [], rx = [], analyses = [], refresh, notify }) {
                   <button
                     className="btn btn-pri"
                     onClick={save}
-                    disabled={saving || selMeds.length === 0 || !selAppt}
+                    disabled={saving || !selAppt || !inst.trim() || !fu}
                   >
                     {saving ? <><AppIcon name="clock" /> Saving...</> : "Save & Send to Patient"}
                   </button>
@@ -370,6 +251,65 @@ function DocRx({ user, appts = [], rx = [], analyses = [], refresh, notify }) {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {patientDetailsOpen && curAppt && (
+        <div className="doctor-patient-details-backdrop" onMouseDown={() => setPatientDetailsOpen(false)}>
+          <section className="doctor-patient-details-dialog" role="dialog" aria-modal="true" aria-labelledby="doctor-patient-details-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header className="doctor-patient-details-header">
+              <div>
+                <h2 id="doctor-patient-details-title">Patient information</h2>
+                <p>{curAppt.pname} · Patient ID: {curAppt.pid}</p>
+              </div>
+              <button type="button" className="payment-proof-close" aria-label="Close patient information" onClick={() => setPatientDetailsOpen(false)}><AppIcon name="close" /></button>
+            </header>
+            <div className="doctor-patient-details-content">
+              <section className="doctor-patient-details-section">
+                <h3>Profile</h3>
+                <dl className="doctor-patient-details-grid">
+                  <div><dt>Name</dt><dd>{curAppt.pname || "—"}</dd></div>
+                  <div><dt>Email</dt><dd>{curAppt.pemail || "—"}</dd></div>
+                  <div><dt>Phone</dt><dd>{curAppt.pphone || "—"}</dd></div>
+                  <div><dt>Age</dt><dd>{curAppt.page || "—"}</dd></div>
+                  <div><dt>Gender</dt><dd>{curAppt.pgender || "—"}</dd></div>
+                  <div><dt>Skin type</dt><dd>{curAppt.pskinType || "—"}</dd></div>
+                </dl>
+              </section>
+              <section className="doctor-patient-details-section">
+                <h3>Appointments with you ({patientAppointments.length})</h3>
+                {patientAppointments.length ? patientAppointments.map((appointment) => (
+                  <article className="doctor-patient-history-item" key={appointment._id || appointment.id}>
+                    <div><strong>{formatAppointmentFullDate(appointment.date)}</strong><span>{appointment.time} · {appointment.type || "Appointment"}</span></div>
+                    <span className={`badge b-${appointment.status}`}>{appointment.status}</span>
+                  </article>
+                )) : <p className="doctor-patient-details-empty">No appointment history found.</p>}
+              </section>
+              <section className="doctor-patient-details-section">
+                <h3>Skincare plans ({patientPlans.length})</h3>
+                {patientPlans.length ? patientPlans.map((plan) => (
+                  <article className="doctor-patient-plan-item" key={plan._id || plan.id}>
+                    <strong>{formatAppointmentFullDate(plan.date)}</strong>
+                    <p>{plan.inst || "No special instructions recorded."}</p>
+                    {plan.fu && <span>Follow-up: {formatAppointmentFullDate(plan.fu)}</span>}
+                  </article>
+                )) : <p className="doctor-patient-details-empty">No skincare plans found.</p>}
+              </section>
+              <section className="doctor-patient-details-section">
+                <h3>AI skin scans</h3>
+                {loadingPatientScans ? <p className="doctor-patient-details-empty">Loading scan history…</p> : patientScansError ? <p className="doctor-patient-details-error">{patientScansError}</p> : patientScans.length ? (
+                  <div className="doctor-patient-scans">
+                    {patientScans.map((scan) => (
+                      <article className="doctor-patient-scan-item" key={scan._id || scan.id}>
+                        <ScanImage scanId={scan._id || scan.id} alt={`Patient skin scan from ${scan.date || "unknown date"}`} className="doctor-patient-scan-image" />
+                        <div><strong>{scan.atype || "Skin scan"} · {scan.sev || "Unrated"}</strong><span>{scan.date || "Date unavailable"} · {Math.round(scan.conf || 0)}% confidence</span>{scan.notes && <p>{scan.notes}</p>}</div>
+                      </article>
+                    ))}
+                  </div>
+                ) : <p className="doctor-patient-details-empty">No AI scans found.</p>}
+              </section>
+            </div>
+          </section>
         </div>
       )}
     </div>

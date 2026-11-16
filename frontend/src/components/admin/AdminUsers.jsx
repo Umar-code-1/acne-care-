@@ -1,17 +1,17 @@
 // src/components/admin/AdminUsers.jsx
 import React, { useState } from "react";
 import AppIcon from "../shared/AppIcon";
+import API from "../../api";
+
+const EMPTY_USER = { name: "", email: "", password: "", role: "patient", pmdcNumber: "" };
 
 function AdminUsers({ users, setUsers, notify }) {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    password: "",
-    role: "patient",
-  });
+  const [form, setForm] = useState(EMPTY_USER);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
 
   const filtered = users.filter((u) => {
     const matchRole = filter === "all" ? true : u.role === filter;
@@ -22,19 +22,24 @@ function AdminUsers({ users, setUsers, notify }) {
     return matchRole && matchSearch;
   });
 
-  const add = () => {
-    if (!form.name || !form.email || !form.password) return;
-    setUsers((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        ...form,
-        avatar: form.name[0]?.toUpperCase() || "U",
-      },
-    ]);
-    setShowForm(false);
-    setForm({ name: "", email: "", password: "", role: "patient" });
-    notify("User added!");
+  const add = async (event) => {
+    event.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    setFormError("");
+    try {
+      const { data } = await API.post("/users", form);
+      setUsers((prev) => [data, ...prev.filter((user) => user.id !== data.id)]);
+      setFilter(data.role);
+      setSearch("");
+      setShowForm(false);
+      setForm(EMPTY_USER);
+      notify("User added!");
+    } catch (error) {
+      setFormError(error.response?.data?.message || "Could not create the account. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const remove = (user) => {
@@ -50,35 +55,15 @@ function AdminUsers({ users, setUsers, notify }) {
       </div>
 
       <div className="card">
-        <div className="card-h">
-          <div
-            style={{
-              display: "flex",
-              gap: "0.5rem",
-              flexWrap: "wrap",
-            }}
-          >
-            {/* Search */}
-            <input
-              style={{
-                padding: "0.45rem 0.75rem",
-                border: "1.5px solid var(--border)",
-                borderRadius: "var(--r2)",
-                fontFamily: "var(--font)",
-                fontSize: "0.84rem",
-                background: "var(--bg)",
-                outline: "none",
-                minWidth: 180,
-              }}
-              placeholder="Search..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-
-            {/* Filter buttons */}
+        <div className="card-h admin-users-toolbar">
+          <input className="form-i admin-users-search" aria-label="Search users"
+            placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          <div className="admin-users-actions">
             {["all", "dermatologist", "patient", "admin"].map((r) => (
               <button
                 key={r}
+                type="button"
+                aria-pressed={filter === r}
                 className={`btn btn-sm ${
                   filter === r ? "btn-pri" : "btn-ghost"
                 }`}
@@ -91,30 +76,31 @@ function AdminUsers({ users, setUsers, notify }) {
                   : r.charAt(0).toUpperCase() + r.slice(1)}
               </button>
             ))}
+            <button type="button" className="btn btn-pri btn-sm" aria-expanded={showForm} disabled={saving}
+              onClick={() => setShowForm(!showForm)}>
+              {showForm ? "Close Form" : "Add User"}
+            </button>
           </div>
-
-          <button
-            className="btn btn-pri btn-sm"
-            onClick={() => setShowForm(!showForm)}
-          >
-            {showForm ? "Close Form" : "Add User"}
-          </button>
         </div>
 
         {showForm && (
-          <div
+          <form onSubmit={add}
             className="card-b"
             style={{ borderBottom: "1px solid var(--border)" }}
           >
             <div className="g2">
               {["name", "email", "password"].map((f) => (
                 <div className="form-g" key={f}>
-                  <label className="form-l">
-                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                  <label className="form-l" htmlFor={`admin-new-${f}`}>
+                    {f === "name" ? "Full name" : f.charAt(0).toUpperCase() + f.slice(1)}
                   </label>
                   <input
                     className="form-i"
-                    type={f === "password" ? "password" : "text"}
+                    id={`admin-new-${f}`}
+                    type={f === "name" ? "text" : f}
+                    autoComplete={f === "password" ? "new-password" : f}
+                    minLength={f === "password" ? 6 : undefined}
+                    required
                     placeholder={`Enter ${f}`}
                     value={form[f]}
                     onChange={(e) =>
@@ -124,35 +110,42 @@ function AdminUsers({ users, setUsers, notify }) {
                 </div>
               ))}
               <div className="form-g">
-                <label className="form-l">Role</label>
-                <select
-                  className="form-i"
-                  value={form.role}
-                  onChange={(e) =>
-                    setForm({ ...form, role: e.target.value })
-                  }
-                >
-                  <option value="patient">Patient</option>
-                  <option value="dermatologist">Dermatologist</option>
-                  <option value="admin">Admin</option>
-                </select>
+                <label className="form-l" htmlFor="admin-new-role">Role</label>
+                <div className="admin-user-role-select">
+                  <select id="admin-new-role" className="form-i" value={form.role}
+                    onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                    <option value="patient">Patient</option>
+                    <option value="dermatologist">Dermatologist</option>
+                  </select>
+                  <AppIcon name="arrowDown" />
+                </div>
               </div>
+              {form.role === "dermatologist" && (
+                <div className="form-g">
+                  <label className="form-l" htmlFor="admin-new-id">PMDC registration number</label>
+                  <input id="admin-new-id" className="form-i" value={form.pmdcNumber} placeholder="12345-P"
+                    pattern="[0-9]{4,6}-[A-Za-z]" title="Use 4 to 6 digits, a hyphen, and one letter" required
+                    onChange={(e) => setForm({ ...form, pmdcNumber: e.target.value })} />
+                </div>
+              )}
             </div>
+            {formError && <div className="alert al-dan" role="alert">{formError}</div>}
             <div style={{ display: "flex", gap: "0.5rem" }}>
               <button
                 className="btn btn-pri btn-sm"
-                onClick={add}
+                type="submit" disabled={saving}
               >
-                Add User
+                {saving ? "Adding…" : "Add User"}
               </button>
               <button
                 className="btn btn-ghost btn-sm"
+                type="button" disabled={saving}
                 onClick={() => setShowForm(false)}
               >
                 Cancel
               </button>
             </div>
-          </div>
+          </form>
         )}
 
         {/* Users table */}
@@ -203,6 +196,10 @@ function AdminUsers({ users, setUsers, notify }) {
                           >
                             {u.name}
                           </div>
+                          {u.role === "patient" && (u._id || u.id) && (
+                            <small style={{ overflowWrap: "anywhere" }}>ID {u._id || u.id}</small>
+                          )}
+                          {u.role === "dermatologist" && u.pmdcNumber && <small>PMDC {u.pmdcNumber}</small>}
                           {u.spec && (
                             <div
                               style={{

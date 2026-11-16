@@ -9,10 +9,26 @@ const PRIORITY = {
   low:    { bg: "var(--info-l)", border: "var(--info)", label: "Good to know" },
 };
 
+function DietSection({ title, icon, badge, children }) {
+  return (
+    <details className="card diet-section">
+      <summary className="card-h diet-section-summary">
+        <span className="card-t"><AppIcon name={icon} /> {title}</span>
+        {badge}
+        <AppIcon name="arrowDown" className="diet-section-arrow" />
+      </summary>
+      <div className="card-b">{children}</div>
+    </details>
+  );
+}
+
 export default function PatDiet({ setPage }) {
   const [plan, setPlan] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const latestScanDate = plan?.basedOnScan
+    ? new Date(plan.basedOnScan).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+    : "Date unavailable";
 
   useEffect(() => {
     API.get("/diet/my")
@@ -61,18 +77,27 @@ export default function PatDiet({ setPage }) {
     <div>
       <div className="ph">
         <div className="pt">Your Diet Plan</div>
-        <div className="ps">
-          Built from your skin analysis and questionnaire answers
-        </div>
+        <div className="ps">Your food and skin priorities, based on your scan</div>
       </div>
 
-      {/* ---- personalisation summary ---- */}
-      <div className="card">
-        <div className="card-h">
-          <div className="card-t"><AppIcon name="faceScan" /> Personalised for you</div>
-          <span className="badge b-confirmed">{plan.personalisation}% tailored</span>
-        </div>
-        <div className="card-b">
+      <DietSection
+        title="Personalised for you"
+        icon="faceScan"
+        badge={<span className="badge b-confirmed">{plan.personalisation}% tailored</span>}
+      >
+          <div style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem",
+            flexWrap: "wrap", padding: "0.75rem", marginBottom: "0.85rem",
+            background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r2)",
+          }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: "0.84rem", marginBottom: "0.25rem" }}>Latest AI analysis</div>
+              <div style={{ fontSize: "0.8rem", color: "var(--text2)" }}>
+                {plan.severity} · {plan.acneType || "Skin type not classified"}
+              </div>
+            </div>
+            <span className="badge b-pat">{latestScanDate}</span>
+          </div>
           <div style={{ fontSize: "0.88rem", lineHeight: 1.75, color: "var(--text2)", marginBottom: "1rem" }}>
             {plan.summary}
           </div>
@@ -89,17 +114,14 @@ export default function PatDiet({ setPage }) {
           <div className="alert al-info" style={{ marginTop: "1rem", marginBottom: 0, fontSize: "0.82rem" }}>
             <AppIcon name="activity" /> <strong>{plan.skinType} skin:</strong> {plan.skinTip}
           </div>
-        </div>
-      </div>
+      </DietSection>
 
-      {/* ---- action points ---- */}
       {plan.focus.length > 0 && (
-        <div className="card">
-          <div className="card-h">
-            <div className="card-t"><AppIcon name="activity" /> Your Priority Actions</div>
-            <span className="badge b-pending">{plan.focus.length}</span>
-          </div>
-          <div className="card-b">
+        <DietSection
+          title="Priority actions"
+          icon="activity"
+          badge={<span className="badge b-pending">{plan.focus.length}</span>}
+        >
             {plan.focus.map((f, i) => {
               const p = PRIORITY[f.priority] || PRIORITY.low;
               return (
@@ -129,41 +151,37 @@ export default function PatDiet({ setPage }) {
                 </div>
               );
             })}
-          </div>
-        </div>
+        </DietSection>
       )}
 
-      {/* ---- eat / avoid ---- */}
-      <div className="diet-g">
-        <div className="diet-eat">
-          <div className="diet-title"><AppIcon name="check" /> Eat more of these</div>
-          <ul className="diet-list">
-            {plan.eat.map((f) => <li key={f}>{f}</li>)}
-          </ul>
-        </div>
-
-        <div className="diet-av">
-          <div className="diet-title"><AppIcon name="closeCircle" /> Limit or avoid</div>
-          <ul className="diet-list">
-            {plan.avoid.map((f) => <li key={f}>{f}</li>)}
-          </ul>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-h">
-          <div className="card-t">How to use this plan</div>
-        </div>
-        <div className="card-b">
-          <div style={{ fontSize: "0.85rem", lineHeight: 1.8, color: "var(--text2)" }}>
-            Dietary changes take <strong>6–8 weeks</strong> to show on your skin. Change
-            one or two things at a time rather than everything at once — it's easier to
-            stick with, and you'll see which changes actually help you.
-            <br /><br />
-            Re-scan every few weeks to track whether your severity is improving.
+      <DietSection title="Food guide" icon="leaf">
+        <div className="diet-g">
+          <div className="diet-eat">
+            <div className="diet-title"><AppIcon name="check" /> Eat more of these</div>
+            <ul className="diet-list">
+              {plan.eat.map((f) => <li key={f}>{f}</li>)}
+            </ul>
           </div>
 
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "1rem" }}>
+          <div className="diet-av">
+            <div className="diet-title"><AppIcon name="closeCircle" /> Limit or avoid</div>
+            <ul className="diet-list">
+              {plan.avoid.map((f) => <li key={f}>{f}</li>)}
+            </ul>
+          </div>
+        </div>
+        <div className="form-hint" style={{ marginTop: "0.8rem", lineHeight: 1.6 }}>
+          Food is not a guaranteed acne trigger. Evidence is still developing; lower-glycemic choices may help some people, and cow's milk may affect some individuals. Track personal patterns and keep following your treatment plan. {" "}
+          <a href="https://www.aad.org/public/diseases/acne/causes/diet" target="_blank" rel="noreferrer">Read the American Academy of Dermatology's guidance</a>.
+        </div>
+      </DietSection>
+
+      <DietSection title="How to use this plan" icon="clipboard">
+          <div style={{ fontSize: "0.85rem", lineHeight: 1.7, color: "var(--text2)" }}>
+            Start with one or two changes. Re-scan in <strong>6–8 weeks</strong> to track progress.
+          </div>
+
+          <div className="diet-plan-actions" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "1rem" }}>
             <button className="btn btn-pri btn-sm" onClick={() => setPage?.("scan")}>
               <AppIcon name="camera" /> New Scan
             </button>
@@ -171,8 +189,7 @@ export default function PatDiet({ setPage }) {
               <AppIcon name="doctor" /> Ask a Dermatologist
             </button>
           </div>
-        </div>
-      </div>
+      </DietSection>
 
       <Disclaimer variant="diet" />
     </div>

@@ -1,13 +1,16 @@
 // src/api.js
 import axios from "axios";
 
+const API_BASE_URL = import.meta.env.VITE_API_URL
+  || `${window.location.protocol}//${window.location.hostname}:5000/api`;
+
 const API = axios.create({
-  baseURL: "http://localhost:5000/api",
+  baseURL: API_BASE_URL,
 });
 
 // Har request mein token automatically add karo
 API.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
+  const token = localStorage.getItem("token") || sessionStorage.getItem("token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -18,8 +21,9 @@ API.interceptors.request.use((config) => {
 API.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && localStorage.getItem("token")) {
+    if (error.response?.status === 401 && (localStorage.getItem("token") || sessionStorage.getItem("token"))) {
       localStorage.removeItem("token");
+      sessionStorage.removeItem("token");
       window.location.reload();
     }
     return Promise.reject(error);

@@ -1,26 +1,107 @@
 // src/components/patient/PatBook.jsx
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import API from "../../api";
 import AppIcon from "../shared/AppIcon";
 
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const dateKey = (date) => [date.getFullYear(), date.getMonth() + 1, date.getDate()]
+  .map((part) => String(part).padStart(2, "0")).join("-");
+
+function BookingDatePicker({ value, min, onChange, invalid }) {
+  const [open, setOpen] = useState(false);
+  const [month, setMonth] = useState(() => new Date(`${value || min}T12:00:00`));
+  const trigger = useRef(null);
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+  const firstWeekday = new Date(year, monthIndex, 1).getDay();
+  const dayCount = new Date(year, monthIndex + 1, 0).getDate();
+  const changeMonth = (offset) => setMonth(new Date(year, monthIndex + offset, 1));
+  const selectDay = (key) => {
+    onChange(key);
+    setOpen(false);
+    trigger.current?.focus();
+  };
+
+  return (
+    <>
+      <input className="form-i booking-date-native" type="date" aria-label="Choose date"
+        value={value} min={min} aria-invalid={invalid}
+        onChange={(event) => onChange(event.target.value)} />
+      <div className="booking-date-mobile">
+        <button ref={trigger} type="button" className="form-i booking-date-trigger"
+          aria-expanded={open} aria-controls={open ? "booking-calendar" : undefined} aria-invalid={invalid}
+          onClick={() => {
+            if (!open) setMonth(new Date(`${value || min}T12:00:00`));
+            setOpen(!open);
+          }}>
+          <span>{value ? new Date(`${value}T12:00:00`).toLocaleDateString() : "Choose a date"}</span>
+          <AppIcon name="calendar" />
+        </button>
+        {open && (
+          <div id="booking-calendar" className="booking-calendar">
+            <div className="booking-calendar-heading">
+              <button type="button" aria-label="Previous month" onClick={() => changeMonth(-1)}
+                disabled={dateKey(new Date(year, monthIndex, 1)).slice(0, 7) <= min.slice(0, 7)}>‹</button>
+              <strong aria-live="polite">{month.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</strong>
+              <button type="button" aria-label="Next month" onClick={() => changeMonth(1)}>›</button>
+            </div>
+            <div className="booking-calendar-days">
+              {DAY_NAMES.map((day) => <span key={day} aria-hidden="true">{day}</span>)}
+              {Array.from({ length: firstWeekday }, (_, index) => <span key={`empty-${index}`} />)}
+              {Array.from({ length: dayCount }, (_, index) => {
+                const day = new Date(year, monthIndex, index + 1);
+                const key = dateKey(day);
+                return <button key={key} type="button" disabled={key < min} aria-pressed={key === value}
+                  aria-label={day.toLocaleDateString(undefined, { dateStyle: "full" })}
+                  onClick={() => selectDay(key)}>{index + 1}</button>;
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 function PatBook({
   user,
-  doctors = [],
   latestAn,
   appointments = [],
   setAppointments,
   refresh,
   notify,
 }) {
+  const [directory, setDirectory] = useState({ status: "loading", doctors: [] });
   const [saving, setSaving] = useState(false);
   const [shakeDate, setShakeDate] = useState(false);
   const [step, setStep] = useState(1);
   const [selDoc, setSelDoc] = useState(null);
+  const [reviewDoc, setReviewDoc] = useState(null);
   const [type, setType] = useState("");
   const [plat, setPlat] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [done, setDone] = useState(false);
+  const confirmationTitle = useRef(null);
+
+  useEffect(() => {
+    if (done) confirmationTitle.current?.focus();
+  }, [done]);
+
+  useEffect(() => {
+    if (directory.status !== "loading") return;
+    const controller = new AbortController();
+    const { signal } = controller;
+    API.get("/appointments/doctors", { signal })
+      .then(({ data }) => {
+        if (!Array.isArray(data)) throw new Error("Invalid dermatologist list");
+        if (!signal.aborted) setDirectory({ status: "ready", doctors: data });
+      })
+      .catch(() => {
+        if (!signal.aborted) setDirectory({ status: "error", doctors: [] });
+      });
+    return () => controller.abort();
+  }, [directory.status]);
 
   const ALL_PLATFORMS = [
     { id: "zoom", ic: "🎥", n: "Zoom" },
@@ -47,8 +128,6 @@ function PatBook({
   };
 
    const times = selDoc ? buildSlots(selDoc.startTime, selDoc.endTime) : [];
-
-    const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   const dayOf = (dateStr) => {
     if (!dateStr) return "";
@@ -107,33 +186,17 @@ const goToReview = () => {
 
   if (done) {
     return (
-      <div>
+      <div className="booking-confirmation">
         <div className="ph">
           <div className="pt">Book Appointment</div>
         </div>
 
         <div className="confirm-box">
-          <div style={{ fontSize: "3rem", marginBottom: "0.75rem" }}><AppIcon name="check" /></div>
-          <div
-            style={{
-              fontFamily: "var(--font-d)",
-              fontWeight: 700,
-              fontSize: "1.3rem",
-              marginBottom: "0.5rem",
-            }}
-          >
-            Appointment Booked!
-          </div>
-          <div
-            style={{
-              opacity: 0.8,
-              marginBottom: "0.85rem",
-            }}
-          >
-            Your request has been sent to {selDoc?.name}.
-          </div>
+          <div className="confirm-icon"><AppIcon name="check" /></div>
+          <h2 className="confirm-title" ref={confirmationTitle} tabIndex={-1}>Appointment Booked!</h2>
+          <p className="confirm-message">Your request has been sent to {selDoc?.name}.</p>
 
-          <div className="confirm-details">
+          <dl className="confirm-details">
             {[
               ["Doctor", selDoc?.name],
               ["Specialization", selDoc?.spec],
@@ -147,35 +210,21 @@ const goToReview = () => {
               ["Status", "Pending Confirmation"],
             ].map(([k, v]) => (
               <div key={k} className="confirm-row">
-                <span>{k}</span>
-                <span>{v}</span>
+                <dt>{k}</dt>
+                <dd>{v}</dd>
               </div>
             ))}
-          </div>
+          </dl>
 
           {type === "online" && (
-            <div
-              style={{
-                background: "rgba(255,255,255,0.12)",
-                borderRadius: "var(--r2)",
-                padding: "0.75rem",
-                fontSize: "0.84rem",
-                marginTop: "0.5rem",
-              }}
-            >
+            <div className="confirm-meeting-note">
               Meeting link will be sent after doctor confirms.
             </div>
           )}
 
           <button
-            className="btn btn-sm"
+            className="btn btn-sm confirm-again"
             onClick={reset}
-            style={{
-              background: "rgba(255,255,255,0.2)",
-              color: "#fff",
-              border: "1px solid rgba(255,255,255,0.3)",
-              marginTop: "1rem",
-            }}
           >
             Book Another
           </button>
@@ -193,9 +242,7 @@ const goToReview = () => {
 
       {latestAn && (
         <div className="alert al-info">
-          Your analysis will be shared{" "}
-          <strong>{latestAn.atype}</strong> /
-          <strong>{latestAn.sev}</strong> severity.
+          <span>Your analysis will be shared with your dermatologist. <strong>{latestAn.atype} · {latestAn.sev} severity</strong></span>
         </div>
       )}
 
@@ -216,6 +263,7 @@ const goToReview = () => {
               )}
               <div className="bk-step">
                 <div
+                  aria-current={step === i + 1 ? "step" : undefined}
                   className={`bk-sn ${
                     step > i + 1 ? "done" : step === i + 1 ? "act" : ""
                   }`}
@@ -245,8 +293,22 @@ const goToReview = () => {
           >
             Choose a Dermatologist
           </div>
+          {directory.status === "loading" && (
+            <div className="alert al-info" role="status">Loading dermatologists…</div>
+          )}
+          {directory.status === "error" && (
+            <div className="alert al-dan" role="alert">
+              <span>Could not load dermatologists.</span>
+              <button type="button" className="btn btn-sm" onClick={() => setDirectory({ status: "loading", doctors: [] })}>
+                Try again
+              </button>
+            </div>
+          )}
+          {directory.status === "ready" && directory.doctors.length === 0 && (
+            <div className="alert al-info">No dermatologists are currently available.</div>
+          )}
           <div className="doc-grid">
-          {doctors.map((doc) => (
+          {directory.doctors.map((doc) => (
               <div
                 key={doc._id}
                 className={`doc-card ${selDoc?._id === doc._id ? "sel" : ""}`}
@@ -278,13 +340,9 @@ const goToReview = () => {
                     >
                       {doc.spec}
                     </div>
-                    <div
-                      style={{
-                        fontSize: "0.76rem",
-                        color: "var(--acc)",
-                      }}
-                    >
-                      {doc.rating}/5
+                    <div className="doc-review-link-row">
+                      <span className="doc-rating">{doc.rating}/5</span>
+                      <button type="button" className="doc-review-link" onClick={(event) => { event.stopPropagation(); setReviewDoc(doc); }}>View Reviews</button>
                     </div>
                   </div>
                 </div>
@@ -375,33 +433,13 @@ const goToReview = () => {
                 setPlat("");
               }}
             >
-              <div style={{ fontSize: "2.5rem", marginBottom: "0.65rem" }}>
+              <div className="type-c-icon">
                 <AppIcon name="medicalKit" />
               </div>
-              <div
-                style={{
-                  fontWeight: 700,
-                  marginBottom: "0.3rem",
-                }}
-              >
+              <div className="type-c-title">
                 Physical Visit
               </div>
-              <div
-                style={{
-                  fontSize: "0.8rem",
-                  color: "var(--text2)",
-                  marginBottom: "0.65rem",
-                }}
-              >
-                Visit the clinic in person for direct examination.
-              </div>
-              <div
-                style={{
-                  fontWeight: 700,
-                  color: "var(--pri)",
-                  fontSize: "1rem",
-                }}
-              >
+              <div className="type-c-price type-c-price-physical">
                 PKR {selDoc?.fee}
               </div>
             </div>
@@ -410,33 +448,13 @@ const goToReview = () => {
               className={`type-c ${type === "online" ? "sel" : ""}`}
               onClick={() => setType("online")}
             >
-              <div style={{ fontSize: "2.5rem", marginBottom: "0.65rem" }}>
+              <div className="type-c-icon">
                 <AppIcon name="activity" />
               </div>
-              <div
-                style={{
-                  fontWeight: 700,
-                  marginBottom: "0.3rem",
-                }}
-              >
+              <div className="type-c-title">
                 Online Consultation
               </div>
-              <div
-                style={{
-                  fontSize: "0.8rem",
-                  color: "var(--text2)",
-                  marginBottom: "0.65rem",
-                }}
-              >
-                Video call from the comfort of your home.
-              </div>
-              <div
-                style={{
-                  fontWeight: 700,
-                  color: "var(--sec)",
-                  fontSize: "1rem",
-                }}
-              >
+              <div className="type-c-price type-c-price-online">
                 PKR {selDoc?.ofee}
               </div>
             </div>
@@ -461,20 +479,10 @@ const goToReview = () => {
                     className={`plat-c ${plat === p.id ? "sel" : ""}`}
                     onClick={() => setPlat(p.id)}
                   >
-                    <div
-                      style={{
-                        fontSize: "1.75rem",
-                        marginBottom: "0.3rem",
-                      }}
-                    >
+                    <div className="plat-c-icon">
                       <AppIcon emoji={p.ic} />
                     </div>
-                    <div
-                      style={{
-                        fontSize: "0.82rem",
-                        fontWeight: 600,
-                      }}
-                    >
+                    <div className="plat-c-name">
                       {p.n}
                     </div>
                   </div>
@@ -522,18 +530,12 @@ const goToReview = () => {
               >
                 Choose Date
               </div>
-              <input
-                className="form-i"
-                type="date"
-                value={date}
-                min={new Date().toISOString().split("T")[0]}
-                onChange={(e) => { setDate(e.target.value); setShakeDate(false); }}
-                style={date && !dateOk ? { borderColor: "var(--dan)" } : {}}
-              />
+              <BookingDatePicker value={date} min={dateKey(new Date())} invalid={!!date && !dateOk}
+                onChange={(value) => { setDate(value); setShakeDate(false); }} />
               {selDoc?.days?.length > 0 && (
-                <div className="form-hint">
-                  Dr. {selDoc.name?.split(" ").slice(-1)} is available on:{" "}
-                  <strong>{selDoc.days.join(", ")}</strong>
+                <div className="doctor-availability-note">
+                  <span><strong>{selDoc.name}</strong> is available on</span>
+                  <strong className="doctor-availability-days">{selDoc.days.join(", ")}</strong>
                 </div>
               )}
               {date && !dateOk && (
@@ -649,6 +651,35 @@ const goToReview = () => {
             </button>
           </div>
         </>
+      )}
+      {reviewDoc && (
+        <div className="doctor-reviews-backdrop" onMouseDown={() => setReviewDoc(null)}>
+          <section className="doctor-reviews-dialog" role="dialog" aria-modal="true" aria-labelledby="doctor-reviews-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="doctor-reviews-header">
+              <div>
+                <h2 id="doctor-reviews-title">Reviews for {reviewDoc.name}</h2>
+                <div className="doctor-reviews-rating"><AppIcon name="star" /> {reviewDoc.rating}/5 average rating</div>
+              </div>
+              <button type="button" className="doctor-reviews-close" onClick={() => setReviewDoc(null)} aria-label="Close reviews">×</button>
+            </div>
+            {Array.isArray(reviewDoc.reviews) && reviewDoc.reviews.length > 0 ? (
+              <div className="doctor-review-list">
+                {reviewDoc.reviews.map((review, index) => (
+                  <article className="doctor-review" key={review._id || index}>
+                    <div className="doctor-review-topline">
+                      <strong>{review.patientName || review.name || "Patient"}</strong>
+                      <span><AppIcon name="star" /> {review.rating}/5</span>
+                    </div>
+                    <p>{review.comment || review.text}</p>
+                    {review.createdAt && <time dateTime={review.createdAt}>{new Date(review.createdAt).toLocaleDateString()}</time>}
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="doctor-reviews-empty">No written patient reviews are available for this dermatologist yet.</div>
+            )}
+          </section>
+        </div>
       )}
     </div>
   );

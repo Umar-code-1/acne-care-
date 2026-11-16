@@ -8,69 +8,85 @@ const Scan = require("../models/Scan");
 
 const BASE = {
   Mild: {
-    eat: ["Green tea", "Blueberries", "Oats", "Sweet potato", "Spinach", "Brown rice"],
-    avoid: ["Candy & soda", "White bread", "Chips", "Pastries"],
-    note: "Your acne is mild. Small, consistent dietary changes are usually enough.",
+    eat: ["Oats", "Beans, lentils or chickpeas", "Whole-wheat roti", "Brown rice", "Leafy vegetables", "Fresh fruit", "Unsweetened green tea"],
+    avoid: ["Sugary drinks and soda", "Candy and mithai", "White bread and naan", "Pastries and biscuits", "Chips and fries", "Large portions of white rice"],
+    note: "Your acne is mild. A balanced diet may support your skin, but food changes are not a substitute for treatment.",
   },
   Moderate: {
-    eat: ["Salmon", "Walnuts", "Turmeric", "Broccoli", "Bell peppers", "Olive oil", "Avocado"],
-    avoid: ["All dairy products", "Refined carbs", "Sugary drinks", "Pizza & white pasta", "Processed snacks"],
-    note: "Moderate acne responds well to an anti-inflammatory diet. Give it 6–8 weeks.",
+    eat: ["Oats", "Beans, lentils or chickpeas", "Whole-wheat roti", "Brown rice", "Leafy vegetables", "Fresh fruit", "Eggs or fish", "Walnuts or pumpkin seeds"],
+    avoid: ["Sugary drinks and soda", "Candy and mithai", "White bread and naan", "Pastries and biscuits", "Chips and fries", "Large portions of white rice", "Cow's milk if you notice a personal flare"],
+    note: "Moderate acne may benefit from balanced food choices alongside a dermatologist's treatment plan.",
   },
   Severe: {
-    eat: ["Fatty fish (salmon, mackerel)", "Avocado", "Dark leafy greens", "Brazil nuts", "Flaxseeds", "Fermented vegetables"],
-    avoid: ["ALL dairy (strictly)", "High-glycemic foods", "Processed meats", "Seed oils", "Fried foods", "Alcohol"],
+    eat: ["Oats", "Beans, lentils or chickpeas", "Whole-wheat roti", "Brown rice", "Dark leafy vegetables", "Fresh fruit", "Eggs or fish", "Walnuts or pumpkin seeds"],
+    avoid: ["Sugary drinks and soda", "Candy and mithai", "White bread and naan", "Pastries and biscuits", "Chips and fries", "Large portions of white rice", "Cow's milk if you notice a personal flare"],
     note: "Severe acne needs medical treatment alongside diet. Diet alone will not be enough.",
   },
 };
 
 const SKIN = {
   Oily: {
-    tip: "Zinc-rich foods help regulate sebum production.",
+    tip: "Skin type does not require a special diet. Choose a varied, balanced mix of foods.",
     eat: ["Pumpkin seeds", "Chickpeas", "Lentils"],
-    avoid: ["Greasy foods", "Excess omega-6 oils"],
+    avoid: [],
   },
   Dry: {
-    tip: "Healthy fats support your skin barrier.",
+    tip: "A balanced diet supports general health; no specific food is proven to treat dry skin.",
     eat: ["Olive oil", "Almonds", "Chia seeds"],
-    avoid: ["Excess caffeine", "Alcohol"],
+    avoid: [],
   },
   Combination: {
-    tip: "Balance and hydration matter most for combination skin.",
+    tip: "A varied diet is a good general choice for combination skin.",
     eat: ["Cucumber", "Herbal teas", "Leafy greens"],
-    avoid: ["Added sugar", "Ultra-processed foods"],
+    avoid: [],
   },
   Sensitive: {
-    tip: "Anti-inflammatory foods reduce reactivity.",
+    tip: "Avoid restricting foods for sensitivity unless you have a known personal trigger or medical advice.",
     eat: ["Turmeric", "Ginger", "Oats", "Chamomile tea"],
-    avoid: ["Spicy foods", "Alcohol", "Citrus"],
+    avoid: [],
   },
   Normal: {
-    tip: "Maintain a balanced, antioxidant-rich diet.",
+    tip: "A varied, balanced diet supports general health.",
     eat: ["Mixed berries", "Colourful vegetables", "Green tea"],
-    avoid: ["Excess sugar", "Processed snacks"],
+    avoid: [],
   },
 };
 
 const buildPlan = (scan) => {
   const q = scan.questionnaire || {};
-  const sev = BASE[scan.severity] ? scan.severity : "Mild";
+  const scanSeverity = scan.severity || "Clear";
+  const sev = BASE[scanSeverity] ? scanSeverity : "Mild";
   const base = BASE[sev];
   const skin = SKIN[scan.skinType] || SKIN.Normal;
 
   const eat = new Set([...base.eat, ...skin.eat]);
-  const avoid = new Set([...base.avoid, ...skin.avoid]);
+  const avoid = new Set(base.avoid);
   const focus = [];      // personalised action points
   const factors = [];    // what we actually used
 
-  factors.push(`${sev} severity`, `${scan.skinType || "Normal"} skin`);
+  factors.push(`${scanSeverity} scan result`, `${scan.skinType || "Normal"} skin`);
+
+  focus.push(
+    {
+      icon: "🌾",
+      title: "Choose higher-fibre carbs",
+      text: "Try oats, beans, lentils or whole-wheat roti in place of some refined grains. Lower-glycemic eating may help some people with acne, though evidence is still limited.",
+      priority: "medium",
+    },
+    {
+      icon: "📝",
+      title: "Notice your own food patterns",
+      text: "If you suspect a food trigger, keep a simple note of what you ate and when breakouts happen. Avoid cutting out whole food groups without a clinician's advice.",
+      priority: "low",
+    },
+  );
 
   // ---- hydration ----
   if (q.waterIntake !== undefined && q.waterIntake < 6) {
     focus.push({
       icon: "💧",
       title: "Increase your water intake",
-      text: `You reported ${q.waterIntake} glasses a day. Aim for 8–10. Dehydrated skin produces more oil to compensate, which worsens congestion.`,
+      text: `You reported ${q.waterIntake} glasses a day. Drink regularly to stay hydrated; extra water has not been shown to treat acne.`,
       priority: "high",
     });
     eat.add("Cucumber");
@@ -83,13 +99,12 @@ const buildPlan = (scan) => {
     focus.push({
       icon: "😴",
       title: "Prioritise sleep",
-      text: `${q.sleep} hours a night raises cortisol, which increases oil production and inflammation. Add magnesium-rich foods to support sleep quality.`,
+      text: `${q.sleep} hours a night is below the usual sleep recommendation. A regular sleep routine can support your overall wellbeing.`,
       priority: "high",
     });
     eat.add("Almonds");
     eat.add("Bananas");
     eat.add("Pumpkin seeds");
-    avoid.add("Caffeine after 4pm");
     factors.push(`${q.sleep} hours sleep`);
   }
 
@@ -97,15 +112,13 @@ const buildPlan = (scan) => {
   if (q.stress !== undefined && q.stress >= 7) {
     focus.push({
       icon: "😰",
-      title: "Manage stress through diet",
-      text: `A stress level of ${q.stress}/10 is strongly linked to acne flare-ups. Omega-3s and magnesium help regulate the stress response.`,
+      title: "Make time for stress care",
+      text: `You reported a stress level of ${q.stress}/10. Stress can affect wellbeing; food alone is not a proven treatment for stress-related acne.`,
       priority: "high",
     });
     eat.add("Dark chocolate (70%+)");
     eat.add("Fatty fish");
     eat.add("Spinach");
-    avoid.add("Excess caffeine");
-    avoid.add("Energy drinks");
     factors.push(`stress level ${q.stress}/10`);
   }
 
@@ -114,7 +127,7 @@ const buildPlan = (scan) => {
     focus.push({
       icon: "🏃",
       title: "Add light activity",
-      text: "Even 20 minutes of walking daily improves circulation and helps regulate the hormones that drive acne.",
+      text: "If it is suitable for you, add gentle movement such as a short walk for general health. Exercise is not a standalone acne treatment.",
       priority: "medium",
     });
     factors.push("low activity level");
@@ -125,14 +138,12 @@ const buildPlan = (scan) => {
     focus.push({
       icon: "⚕️",
       title: "Hormonal support",
-      text: "You reported hormonal issues. Low-glycemic eating and spearmint tea have evidence for reducing androgen-driven acne. Discuss with your dermatologist.",
+      text: "You reported hormonal concerns. Discuss persistent acne and possible hormonal causes with your dermatologist; food changes cannot replace medical care.",
       priority: "high",
     });
     eat.add("Spearmint tea");
     eat.add("Flaxseeds");
     eat.add("Whole grains");
-    avoid.add("High-sugar foods");
-    avoid.add("Refined flour");
     factors.push("hormonal factors reported");
   }
 
@@ -162,7 +173,6 @@ const buildPlan = (scan) => {
   if (Array.isArray(q.problems)) {
     if (q.problems.includes("Oily Skin")) {
       eat.add("Zinc-rich nuts");
-      avoid.add("Fried food");
     }
     if (q.problems.includes("Dark Spots") || q.problems.includes("Hyperpigmentation")) {
       focus.push({
@@ -178,7 +188,6 @@ const buildPlan = (scan) => {
     if (q.problems.includes("Redness")) {
       eat.add("Ginger");
       eat.add("Turmeric");
-      avoid.add("Spicy foods");
     }
   }
 
@@ -187,10 +196,12 @@ const buildPlan = (scan) => {
   focus.sort((a, b) => rank[a.priority] - rank[b.priority]);
 
   return {
-    severity: sev,
+    severity: scanSeverity,
     acneType: scan.acneType,
     skinType: scan.skinType || "Normal",
-    summary: base.note,
+    summary: scanSeverity === "Clear"
+      ? "Your latest scan showed clear skin. Keep following your usual care routine; these food ideas support general health and are not acne treatment."
+      : base.note,
     skinTip: skin.tip,
     eat: [...eat],
     avoid: [...avoid],

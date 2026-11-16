@@ -10,12 +10,12 @@ export default function AdminAppts({ appointments }) {
   ];
 
   return (
-    <div>
+    <div className="admin-appointments">
       <div className="ph">
         <div className="pt">All Appointments</div>
       </div>
 
-      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
+      <div className="stat-grid admin-appointment-stats">
         {stats.map(({ s, ic, c, l }) => (
           <div key={s} className="stat-c">
             <div className="stat-ic" style={{ background: `var(--${c}-l)` }}><AppIcon emoji={ic} /></div>
@@ -31,7 +31,7 @@ export default function AdminAppts({ appointments }) {
 
       <div className="card">
         <div className="tbl-wrap">
-          <table>
+          <table className="admin-appointment-table" role="table" aria-label="All appointments">
             <thead>
               <tr>
                 <th>Patient</th>
@@ -42,22 +42,24 @@ export default function AdminAppts({ appointments }) {
                 <th>Status</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
               {appointments.map(a => (
-                <tr key={a.id}>
-                  <td style={{ fontWeight: 600 }}>{a.pname}</td>
-                  <td>{a.dname}</td>
-                  <td>
+                <tr key={a.id} role="row" data-notification-appointment={a.id} tabIndex={-1}>
+                  <td role="cell" style={{ fontWeight: 600 }}><span className="admin-appointment-label" aria-hidden="true">Patient</span>{a.pname}</td>
+                  <td role="cell"><span className="admin-appointment-label" aria-hidden="true">Doctor</span>{a.dname}</td>
+                  <td role="cell">
+                    <span className="admin-appointment-label" aria-hidden="true">Date &amp; time</span>
                     <div style={{ fontWeight: 600 }}>{a.date}</div>
                     <div style={{ fontSize: '0.76rem', color: 'var(--text2)' }}>{a.time}</div>
                   </td>
-                  <td>
+                  <td role="cell">
+                    <span className="admin-appointment-label" aria-hidden="true">Type</span>
                     <span className={`badge b-${a.type}`}>
                       {a.type === 'online' ? a.plat : 'Physical'}
                     </span>
                   </td>
-                  <td><span className={`badge b-${a.sev?.toLowerCase()}`}>{a.sev}</span></td>
-                  <td><span className={`badge b-${a.status}`}>{a.status}</span></td>
+                  <td role="cell"><span className="admin-appointment-label" aria-hidden="true">Severity</span>{a.sev ? <span className={`badge b-${a.sev.toLowerCase()}`}>{a.sev}</span> : "—"}</td>
+                  <td role="cell"><span className="admin-appointment-label" aria-hidden="true">Status</span><span className={`badge b-${a.status}`}>{a.status}</span></td>
                 </tr>
               ))}
             </tbody>

@@ -5,8 +5,15 @@ import ScanImage from "./ScanImage";
 
 export default function ScanHistory({ analyses = [], refresh, notify }) {
   const [open, setOpen] = useState(null);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [showAllHistory, setShowAllHistory] = useState(false);
   const [busy, setBusy] = useState("");
   const [confirmId, setConfirmId] = useState(null);
+
+  const toggleHistory = () => {
+    setShowAllHistory(false);
+    setHistoryExpanded((expanded) => !expanded);
+  };
 
   const deletePhoto = async (id) => {
     setBusy(id);
@@ -26,15 +33,16 @@ export default function ScanHistory({ analyses = [], refresh, notify }) {
     return (
       <div className="card">
         <div className="card-h">
-          <div className="card-t"><AppIcon name="chart" /> My Scan History</div>
+          <div className="card-t"><AppIcon name="clock" /> Scan History</div>
+        <button type="button" className="profile-collapse-button" onClick={toggleHistory} aria-expanded={historyExpanded} aria-label={`${historyExpanded ? "Collapse" : "Expand"} scan history`}><AppIcon name="arrowDown" className={historyExpanded ? "open" : ""} /></button>
         </div>
-        <div className="card-b">
+        {historyExpanded && <div className="card-b">
           <div className="empty" style={{ padding: "1.5rem" }}>
             <div className="empty-ic"><AppIcon name="search" /></div>
             <div className="empty-t">No scans yet</div>
             <div className="empty-s">Run a skin analysis to start tracking your progress.</div>
           </div>
-        </div>
+        </div>}
       </div>
     );
   }
@@ -42,11 +50,14 @@ export default function ScanHistory({ analyses = [], refresh, notify }) {
   return (
     <div className="card">
       <div className="card-h">
-        <div className="card-t"><AppIcon name="chart" /> My Scan History</div>
-        <div className="ps">{analyses.length} scan{analyses.length === 1 ? "" : "s"}</div>
+        <div className="card-t"><AppIcon name="clock" /> Scan History</div>
+        <div className="scan-history-header-actions">
+          <span className="badge b-pat scan-history-count">{analyses.length} scan{analyses.length === 1 ? "" : "s"}</span>
+          <button type="button" className="profile-collapse-button" onClick={toggleHistory} aria-expanded={historyExpanded} aria-label={`${historyExpanded ? "Collapse" : "Expand"} scan history`}><AppIcon name="arrowDown" className={historyExpanded ? "open" : ""} /></button>
+        </div>
       </div>
-      <div className="card-b">
-        {analyses.map((a) => {
+      <div className="card-b" hidden={!historyExpanded}>
+        {(showAllHistory ? analyses : analyses.slice(0, 5)).map((a) => {
           const id = a._id || a.id;
           const isOpen = open === id;
 
@@ -90,14 +101,6 @@ export default function ScanHistory({ analyses = [], refresh, notify }) {
               {/* DETAILS */}
               {isOpen && (
                 <div style={{ padding: "0 0.85rem 0.85rem", borderTop: "1px solid var(--border)" }}>
-
-                  <div style={{ margin: "0.85rem 0" }}>
-                    <ScanImage
-                      scanId={id}
-                      style={{ width: "100%", maxWidth: 260, borderRadius: 10, display: "block", margin: "0 auto" }}
-                    />
-                  </div>
-
                   {[
                     ["Acne Type", a.atype],
                     ["Severity", a.sev],
@@ -177,6 +180,15 @@ export default function ScanHistory({ analyses = [], refresh, notify }) {
             </div>
           );
         })}
+        {analyses.length > 5 && (
+          <button
+            type="button"
+            className="scan-history-view-all"
+            onClick={() => setShowAllHistory((showAll) => !showAll)}
+          >
+            {showAllHistory ? "Show recent scans" : `View all scan history (${analyses.length})`}
+          </button>
+        )}
       </div>
     </div>
   );

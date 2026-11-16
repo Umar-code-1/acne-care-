@@ -2,12 +2,13 @@ import React, { useState, useEffect } from "react";
 import AppIcon from "../shared/AppIcon";
 import API from "../../api";
 
-export default function DocPayments({ notify }) {
+export default function DocPayments({ notify, refresh }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
-  const [rejectId, setRejectId] = useState(null);
-  const [reason, setReason] = useState("");
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [proofPreview, setProofPreview] = useState(null);
+  const [proofLoading, setProofLoading] = useState("");
 
   const load = () => {
     setLoading(true);
@@ -19,14 +20,17 @@ export default function DocPayments({ notify }) {
 
   useEffect(load, []);
 
+  useEffect(() => () => {
+    if (proofPreview?.url) URL.revokeObjectURL(proofPreview.url);
+  }, [proofPreview]);
+
   const act = async (id, approve, why) => {
     setBusy(id);
     try {
       await API.put(`/payments/${id}/verify`, { approve, reason: why });
       notify?.(approve ? "✅ Payment verified" : "Payment rejected");
-      setRejectId(null);
-      setReason("");
       load();
+      refresh?.();
     } catch (err) {
       notify?.("❌ " + (err.response?.data?.message || "Action failed"));
     } finally {
@@ -35,11 +39,18 @@ export default function DocPayments({ notify }) {
   };
 
   const viewProof = async (id) => {
+    setProofLoading(id);
     try {
       const res = await API.get(`/payments/${id}/proof`, { responseType: "blob" });
-      window.open(URL.createObjectURL(res.data), "_blank");
+      const type = (res.headers["content-type"] || res.data.type || "").split(";")[0].trim().toLowerCase();
+      if (!type.startsWith("image/") && type !== "application/pdf") {
+        throw new Error("Unsupported receipt format");
+      }
+      setProofPreview({ url: URL.createObjectURL(res.data), type });
     } catch {
-      notify?.("❌ No receipt found");
+      notify?.("❌ Could not load receipt preview");
+    } finally {
+      setProofLoading("");
     }
   };
 
@@ -71,22 +82,22 @@ export default function DocPayments({ notify }) {
             </div>
           ) : (
             list.map((p) => (
-              <div key={p._id} style={{
+              <div key={p._id} data-notification-appointment={p._id} tabIndex={-1} style={{
                 border: "1px solid var(--border)",
                 borderRadius: "var(--r)",
                 padding: "1rem", marginBottom: "0.85rem",
               }}>
-                <div style={{
+                <div className="payment-verification-patient-header" style={{
                   display: "flex", justifyContent: "space-between",
                   alignItems: "flex-start", marginBottom: "0.75rem", gap: "0.5rem",
                 }}>
-                  <div>
+                  <div className="payment-verification-patient">
                     <div style={{ fontWeight: 700 }}>{p.pname}</div>
                     <div style={{ fontSize: "0.76rem", color: "var(--text2)" }}>
                       {p.pphone || p.pemail}
                     </div>
                   </div>
-                  <div style={{
+                  <div className="payment-verification-amount" style={{
                     fontFamily: "var(--font-d)", fontWeight: 800,
                     fontSize: "1.1rem", color: "var(--pri)", whiteSpace: "nowrap",
                   }}>
@@ -99,60 +110,84 @@ export default function DocPayments({ notify }) {
                   ["Type", p.type === "online" ? "Online" : "Physical"],
                   ["Transaction ref", p.ref || "— not provided —"],
                 ].map(([k, v]) => (
-                  <div key={k} style={{
+                  <div key={k} className={`payment-verification-detail${k === "Appointment" ? " payment-verification-appointment" : ""}`} style={{
                     display: "flex", justifyContent: "space-between",
-                    fontSize: "0.81rem", padding: "0.3rem 0",
+                    fontSize: "0.88rem", padding: "0.4rem 0",
                     borderBottom: "1px solid var(--border)",
                   }}>
-                    <span style={{ color: "var(--text2)" }}>{k}</span>
+                    <span className="payment-verification-label" style={{ color: "var(--text2)" }}>{k}</span>
                     <strong>{v}</strong>
                   </div>
                 ))}
 
-                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.85rem" }}>
-                  <button className="btn btn-ghost btn-sm" onClick={() => viewProof(p._id)}>
-                    <AppIcon name="document" /> View Receipt
+                <div className="payment-verification-actions" style={{ marginTop: "0.85rem" }}>
+                  <button className="btn btn-ghost btn-sm payment-receipt-button" disabled={proofLoading === p._id} onClick={() => viewProof(p._id)}>
+                    <AppIcon name="document" className="payment-receipt-icon" />
+                    {proofLoading === p._id ? <span className="payment-action-label">Loading…</span> : <>
+                      <span className="payment-action-label payment-receipt-full">View Receipt</span>
+                      <span className="payment-action-label payment-receipt-short">Receipt</span>
+                    </>}
                   </button>
                   <button className="btn btn-pri btn-sm"
                     disabled={busy === p._id}
-                    onClick={() => act(p._id, true)}>
-                    <AppIcon name="check" /> Approve
+                    onClick={() => setConfirmAction({ id: p._id, approve: true, patientName: p.pname, fee: p.fee })}>
+                    <AppIcon name="check" className="payment-approve-check" /> <span className="payment-action-label">Approve</span>
                   </button>
-                  <button className="btn btn-dan btn-sm"
+                  <button className="btn btn-pri btn-sm payment-reject-action"
                     disabled={busy === p._id}
-                    onClick={() => setRejectId(p._id)}>
-                    <AppIcon name="close" /> Reject
+                    onClick={() => setConfirmAction({ id: p._id, approve: false, patientName: p.pname, fee: p.fee })}>
+                    <AppIcon name="close" className="payment-reject-cross" /> <span className="payment-action-label">Reject</span>
                   </button>
                 </div>
-
-                {rejectId === p._id && (
-                  <div className="alert al-dan" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
-                    <div style={{ width: "100%" }}>
-                      <div style={{ fontWeight: 700, marginBottom: "0.5rem" }}>
-                        Reason for rejection
-                      </div>
-                      <input className="form-i" value={reason}
-                        onChange={(e) => setReason(e.target.value)}
-                        placeholder="e.g. Amount does not match"
-                        style={{ marginBottom: "0.5rem" }} />
-                      <div style={{ display: "flex", gap: "0.5rem" }}>
-                        <button className="btn btn-dan btn-sm"
-                          onClick={() => act(p._id, false, reason)}>
-                          Confirm Rejection
-                        </button>
-                        <button className="btn btn-ghost btn-sm"
-                          onClick={() => { setRejectId(null); setReason(""); }}>
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             ))
           )}
         </div>
       </div>
+
+      {confirmAction && (
+        <div className="payment-confirm-backdrop" onMouseDown={() => setConfirmAction(null)}>
+          <section className="payment-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="payment-confirm-title" aria-describedby="payment-confirm-message" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="payment-confirm-icon"><AppIcon name={confirmAction.approve ? "check" : "alert"} /></div>
+            <h2 id="payment-confirm-title">{confirmAction.approve ? "Approve this payment?" : "Reject this payment?"}</h2>
+            <p id="payment-confirm-message">
+              {confirmAction.approve
+                ? `Please verify the receipt and amount against your bank statement before approving ${confirmAction.patientName}’s payment of PKR ${Number(confirmAction.fee || 0).toLocaleString()}.`
+                : `Are you sure you want to reject ${confirmAction.patientName}’s payment of PKR ${Number(confirmAction.fee || 0).toLocaleString()}?`}
+            </p>
+            <div className="payment-confirm-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setConfirmAction(null)}>No</button>
+              <button type="button" className="btn btn-pri" onClick={() => {
+                const decision = confirmAction;
+                setConfirmAction(null);
+                act(decision.id, decision.approve, decision.reason);
+              }}>
+                Yes, {confirmAction.approve ? "approve" : "reject"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {proofPreview && (
+        <div className="payment-proof-backdrop" onMouseDown={() => setProofPreview(null)}>
+          <section className="payment-proof-dialog" role="dialog" aria-modal="true" aria-labelledby="payment-proof-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header className="payment-proof-header">
+              <h2 id="payment-proof-title">Payment receipt</h2>
+              <button type="button" className="payment-proof-close" aria-label="Close receipt preview" onClick={() => setProofPreview(null)}>
+                <AppIcon name="close" />
+              </button>
+            </header>
+            <div className="payment-proof-content">
+              {proofPreview.type === "application/pdf" ? (
+                <iframe title="Payment receipt PDF" src={proofPreview.url} />
+              ) : (
+                <img src={proofPreview.url} alt="Uploaded payment receipt" />
+              )}
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

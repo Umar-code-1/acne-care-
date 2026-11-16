@@ -13,7 +13,10 @@ export default function DocDash({ user, appts = [], rx = [], setPage, refresh, n
     <div>
       <VerificationBanner user={user} notify={notify} refresh={refresh} />
       <div className="ph">
-        <div className="pt">Good morning, {user.name}</div>
+        <div className="pt doctor-dashboard-greeting">
+          <span>Good morning 👋</span>
+          <strong>{String(user.name || "Doctor").startsWith("Dr.") ? user.name : `Dr. ${user.name || "Doctor"}`}</strong>
+        </div>
         <div className="ps">{user.qual} • {user.exp} years experience</div>
       </div>
 
@@ -64,22 +67,16 @@ export default function DocDash({ user, appts = [], rx = [], setPage, refresh, n
           <div className="card-h">
             <div className="card-t">Profile Summary</div>
           </div>
-          <div className="card-b">
+          <dl className="card-b doctor-profile-summary">
             {[['Rating', `${user.rating}/5`], ['Physical Fee', `PKR ${user.fee}`], 
               ['Online Fee', `PKR ${user.ofee}`], ['Qualification', user.qual], 
               ['Working Days', user.days?.join(', ')]].map(([k, v]) => (
-              <div key={k} style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                padding: '0.55rem 0', 
-                borderBottom: '1px solid var(--border)', 
-                fontSize: '0.85rem' 
-              }}>
-                <span style={{ color: 'var(--text2)' }}>{k}</span>
-                <strong>{v}</strong>
+              <div key={k} className="doctor-profile-summary-row">
+                <dt>{k}</dt>
+                <dd>{v || '—'}</dd>
               </div>
             ))}
-          </div>
+          </dl>
         </div>
       </div>
     </div>

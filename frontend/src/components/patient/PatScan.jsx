@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import API from "../../api";
-import ScanImage from "../shared/ScanImage";
 import Disclaimer from "../shared/Disclaimer";
 import AppIcon from "../shared/AppIcon";
 
@@ -33,39 +32,54 @@ const PHOTO_TIPS = [
   ['💇', 'Hair pulled back away from face'],
 ];
 
+const UPLOAD_TIPS = [
+  ['sun', 'Use natural lighting'],
+  ['faceScan', 'Keep your face visible'],
+  ['star', 'Avoid filters or editing'],
+  ['drop', 'Avoid heavy makeup'],
+];
+
+const MIN_AGE = 1;
+const isAgeTooLow = (age) => age !== "" && Number(age) < MIN_AGE;
+
 const buildSteps = (form, set, toggle) => [
   {
     title: 'Basic Personal Information',
     icon: '👤',
-    why: 'Age and gender help improve analysis accuracy because acne causes differ by hormonal stages and age groups.',
     required: true,
-    valid: form.name.trim() && form.age && form.gender,
+    valid: form.name.trim() && Number.isInteger(Number(form.age)) && Number(form.age) >= MIN_AGE && Number(form.age) <= 120 && form.gender,
     content: (
       <>
-        <div className="g2">
+        <div className="assess-personal-fields">
           <div className="form-g">
-            <label className="form-l">Full Name</label>
-            <input className="form-i" placeholder="Your full name"
-              value={form.name} onChange={e => set("name", e.target.value)} />
+            <label className="form-l" htmlFor="assessment-name">Full Name <span aria-hidden="true">*</span></label>
+            <input id="assessment-name" className="form-i" placeholder="Your full name"
+              value={form.name} onChange={e => set("name", e.target.value)} required />
           </div>
           <div className="form-g">
-            <label className="form-l">Age</label>
-            <input className="form-i" type="number" placeholder="Your age"
-              value={form.age} onChange={e => set("age", e.target.value)} />
+            <label className="form-l" htmlFor="assessment-age">Age <span aria-hidden="true">*</span></label>
+            <input id="assessment-age" className="form-i" type="number" placeholder="Years" step="1"
+              value={form.age} onChange={e => set("age", e.target.value)} min={MIN_AGE} max="120" required
+              aria-invalid={isAgeTooLow(form.age)} aria-describedby={isAgeTooLow(form.age) ? "assessment-age-error" : undefined} />
           </div>
+          {isAgeTooLow(form.age) && (
+            <p className="assess-age-error" id="assessment-age-error" role="alert">Age must be greater than 0.</p>
+          )}
         </div>
         <div className="form-g">
-          <label className="form-l">Gender</label>
-          <div className="radio-grid">
+          <label className="form-l">Gender <span aria-hidden="true">*</span></label>
+          <div className="radio-grid" role="group" aria-label="Gender (required)" aria-required="true">
             {['Male', 'Female', 'Other'].map(g => (
-              <div key={g}
+              <button key={g} type="button"
                 className={`radio-item ${form.gender === g ? "sel" : ""}`}
-                onClick={() => set("gender", g)}>{g}</div>
+                style={{ fontFamily: 'inherit' }}
+                aria-pressed={form.gender === g}
+                onClick={() => set("gender", g)}>{g}</button>
             ))}
           </div>
         </div>
         <div className="form-g">
-          <label className="form-l">Contact Phone/Email</label>
+          <label className="form-l">Contact Phone/Email <span style={{ color: 'var(--text3)', fontWeight: 400 }}>(optional)</span></label>
           <input className="form-i" placeholder="92-3xx-xxxxxxx"
             value={form.contact} onChange={e => set("contact", e.target.value)} />
         </div>
@@ -76,20 +90,21 @@ const buildSteps = (form, set, toggle) => [
     title: 'Skin Type Assessment',
     icon: '🧴',
     why: 'Different skin types require completely different skincare products and routines.',
-    required: true,
+    required: false,
+    missingAnswer: 'Select at least one skin type, or tap Skip.',
     valid: !!form.skinType,
     content: (
-      <div className="radio-grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(130px,1fr))' }}>
+      <div className="radio-grid assess-skin-options">
         {SKIN_TYPES.map(([t, ic, desc]) => (
-          <div key={t}
+          <button key={t} type="button" aria-pressed={form.skinType === t}
             className={`radio-item ${form.skinType === t ? "sel" : ""}`}
             onClick={() => set("skinType", t)}
             style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }}>
               <span><AppIcon emoji={ic} /></span>{t}
-            </div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>{desc}</div>
-          </div>
+            </span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>{desc}</span>
+          </button>
         ))}
       </div>
     )
@@ -99,6 +114,7 @@ const buildSteps = (form, set, toggle) => [
     icon: '⚠️',
     why: 'Knowing your skin concerns helps the AI understand broader skin conditions.',
     required: false,
+    missingAnswer: 'Pick at least one current skin problem, or tap Skip.',
     valid: form.problems.length > 0,
     content: (
       <>
@@ -122,6 +138,7 @@ const buildSteps = (form, set, toggle) => [
     icon: '⏱️',
     why: 'How long you have had acne affects treatment approach and severity classification.',
     required: false,
+    missingAnswer: 'Select an acne duration, or tap Skip.',
     valid: !!form.duration,
     content: (
       <div className="radio-grid">
@@ -138,37 +155,39 @@ const buildSteps = (form, set, toggle) => [
     icon: '🥗',
     why: 'Diet, sleep, stress, and exercise significantly impact skin health and acne severity.',
     required: false,
-    valid: true,
+    missingAnswer: 'Set at least one slider above 0 or choose an exercise frequency. You can also tap Skip.',
+    valid: form.waterIntake > 0 || form.sleep > 0 || form.stress > 0 || !!form.exercise,
     content: (
       <>
         <div className="form-g">
-          <label className="form-l">Water Intake — {form.waterIntake} glasses/day</label>
+          <label className="form-l" htmlFor="assessment-water">Water Intake — {form.waterIntake ?? 0} glasses/day</label>
           <div className="range-wrap">
-            <input type="range" min="0" max="15" value={form.waterIntake}
+            <input id="assessment-water" type="range" min="0" max="15" value={form.waterIntake ?? 0}
               onChange={e => set("waterIntake", Number(e.target.value))} />
-            <strong>{form.waterIntake}</strong>
+            <strong>{form.waterIntake ?? 0}</strong>
           </div>
         </div>
         <div className="form-g">
-          <label className="form-l">Average Sleep — {form.sleep} hours/night</label>
+          <label className="form-l" htmlFor="assessment-sleep">Average Sleep — {form.sleep ?? 0} hours/night</label>
           <div className="range-wrap">
-            <input type="range" min="3" max="12" value={form.sleep}
+            <input id="assessment-sleep" type="range" min="0" max="12" value={form.sleep ?? 0}
               onChange={e => set("sleep", Number(e.target.value))} />
-            <strong>{form.sleep}</strong>
+            <strong>{form.sleep ?? 0}</strong>
           </div>
         </div>
         <div className="form-g">
-          <label className="form-l">Stress Level — {form.stress}/10</label>
+          <label className="form-l" htmlFor="assessment-stress">Stress Level — {form.stress ?? 0}/10</label>
           <div className="range-wrap">
-            <input type="range" min="1" max="10" value={form.stress}
+            <input id="assessment-stress" type="range" min="0" max="10" value={form.stress ?? 0}
               onChange={e => set("stress", Number(e.target.value))} />
-            <strong>{form.stress}</strong>
+            <strong>{form.stress ?? 0}</strong>
           </div>
         </div>
         <div className="form-g">
           <label className="form-l">Exercise Frequency</label>
           <select className="form-i" value={form.exercise}
             onChange={e => set("exercise", e.target.value)}>
+            <option value="">Select a frequency</option>
             <option>Rarely/None</option>
             <option>1-2x/week</option>
             <option>3-4x/week</option>
@@ -183,7 +202,8 @@ const buildSteps = (form, set, toggle) => [
     icon: '🏥',
     why: 'Medical conditions, allergies, and medications can affect acne and treatment options.',
     required: false,
-    valid: true,
+    missingAnswer: 'Add an allergy, medication, or medical history selection, or tap Skip.',
+    valid: !!(form.allergies.trim() || form.medications.trim() || form.conditions.length),
     content: (
       <>
         <div className="form-g">
@@ -229,6 +249,7 @@ const buildSteps = (form, set, toggle) => [
 
 export default function PatScan({ user, analyses, refresh, setAnalyses, notify, setPage }) {
   const [assessStep, setAssessStep] = useState(1);
+  const [showStepError, setShowStepError] = useState(false);
   const [assessDone, setAssessDone] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
@@ -237,24 +258,24 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
   const [showConsentWarning, setShowConsentWarning] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
-  const [elapsed, setElapsed] = useState(0);
 
-  const [form, setForm] = useState({
+  const initialForm = () => ({
     name:        user?.name || "",
     age:         user?.age || "",
     gender:      user?.gender || "",
     contact:     user?.phone || "",
-    skinType:    user?.skinType || "",
+    skinType:    "",
     problems:    [],
     duration:    "",
-    waterIntake: 8,
-    sleep:       7,
-    stress:      5,
-    exercise:    "Rarely/None",
+    waterIntake: undefined,
+    sleep:       undefined,
+    stress:      undefined,
+    exercise:    "",
     allergies:   "",
     medications: "",
     conditions:  [],
   });
+  const [form, setForm] = useState(initialForm);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const toggle = (k, v) => setForm(f => ({
@@ -269,16 +290,29 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
       .catch(err => console.log("History fetch failed:", err.message));
   }, []);
 
-  // analysis ke dauran timer chalao
+  // After upload completes, show analysis progress while the server processes the image.
   useEffect(() => {
-    if (!analyzing) { setElapsed(0); return; }
-    const t = setInterval(() => setElapsed((e) => e + 1), 1000);
-    return () => clearInterval(t);
-  }, [analyzing]);
+    if (!analyzing || progress < 75 || progress >= 95) return;
+    const timer = setInterval(() => setProgress((value) => Math.min(value + 1, 95)), 800);
+    return () => clearInterval(timer);
+  }, [analyzing, progress]);
 
   const steps = buildSteps(form, set, toggle);
   const totalSteps = steps.length;
   const current = steps[assessStep - 1];
+
+  const moveStep = (offset) => {
+    setShowStepError(false);
+    setAssessStep(step => step + offset);
+  };
+
+  const nextStep = () => {
+    if (current.missingAnswer && !current.valid) {
+      setShowStepError(true);
+      return;
+    }
+    moveStep(1);
+  };
 
   const missingStep = steps.findIndex((s) => s.required && !s.valid);
 
@@ -316,9 +350,11 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
 
   const reset = () => {
     clearPhoto();
+    setForm(initialForm());
     setResult(null);
     setAssessDone(false);
     setAssessStep(1);
+    setShowStepError(false);
     setProgress(0);
     setPhotoConsent(false);
     setShowConsentWarning(false);
@@ -327,6 +363,10 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
   // button dabane par asli upload
   const startAnalysis = async () => {
     if (!selectedFile) return;
+    if (!photoConsent) {
+      setShowConsentWarning(true);
+      return;
+    }
 
     setAnalyzing(true);
     setProgress(0);
@@ -353,9 +393,11 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
     try {
       const res = await API.post("/scans", fd, {
         onUploadProgress: (p) => {
-          if (p.total) setProgress(Math.round((p.loaded * 100) / p.total));
+          if (p.total) setProgress(Math.round((p.loaded * 75) / p.total));
         }
       });
+      setProgress(100);
+      await new Promise((resolve) => setTimeout(resolve, 350));
       setResult(res.data);
       setAnalyses(prev => [res.data, ...prev]);
       notify("✅ AI Analysis complete!");
@@ -367,14 +409,37 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
     }
   };
 
+  const photoConsentControl = (
+    <>
+      <label className={`photo-consent ${photoConsent ? "is-checked" : ""} ${showConsentWarning ? "shake has-warning" : ""}`}>
+        <input
+          type="checkbox"
+          checked={photoConsent}
+          aria-describedby={showConsentWarning ? "photo-consent-warning" : undefined}
+          onChange={e => { setPhotoConsent(e.target.checked); setShowConsentWarning(false); }}
+        />
+        <span>I consent to photo analysis</span>
+      </label>
+      {showConsentWarning && (
+        <div id="photo-consent-warning" className="alert al-dan" style={{
+          fontSize: "0.9rem", fontWeight: 700,
+          padding: "1rem", border: "2px solid var(--dan)",
+        }}>
+          <span style={{ fontSize: "1.2rem" }}><AppIcon name="alert" /></span>
+          Please tick the consent box before starting the analysis.
+        </div>
+      )}
+    </>
+  );
+
   return (
-    <div className="assess-root">
+    <div className={`assess-root ${result ? "assess-root-result" : assessDone ? "assess-root-upload" : `assess-root-question ${assessStep === 1 ? "assess-root-personal" : assessStep === 2 ? "assess-root-skin" : ""}`}`}>
       <div className="ph">
         <div className="pt">AI Skin Analysis</div>
         <div className="ps">Complete the assessment and upload your photo</div>
       </div>
 
-      <Disclaimer variant="ai" />
+      {(!assessDone || analyzing || result) && <Disclaimer variant="ai" compact />}
 
       {!assessDone ? (
         /* ============ ASSESSMENT ============ */
@@ -391,8 +456,8 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
 
           <div className="assess-step">
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginBottom: '0.5rem' }}>
-              <div style={{
-                width: 40, height: 40, borderRadius: '10px',
+              <div className="assess-step-icon" style={{
+                width: assessStep <= 2 ? 32 : 40, height: assessStep <= 2 ? 32 : 40, borderRadius: '10px',
                 background: 'var(--pri-l)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: '1.3rem', flexShrink: 0
@@ -402,30 +467,43 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
               <div className="assess-step-title">{current.title}</div>
             </div>
 
-            <div className="assess-step-why">
-              <strong>Why we ask:</strong> {current.why}
-            </div>
+            {current.why && (
+              <div className="assess-step-why">
+                <strong>Why we ask:</strong> {current.why}
+              </div>
+            )}
 
             {current.content}
 
-            <div className="assess-nav">
+            {showStepError && !current.valid && (
+              <p className="assess-step-error" role="alert">{current.missingAnswer}</p>
+            )}
+
+            <div className={`assess-nav${assessStep > 1 ? " assess-nav-compact" : ""}`}>
               <button className="btn btn-ghost"
-                onClick={() => setAssessStep(s => s - 1)}
+                onClick={() => moveStep(-1)}
                 disabled={assessStep === 1}>
                 ← Back
               </button>
 
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div className="assess-nav-actions">
+                {assessStep > 1 && (
+                  <button className="btn btn-ghost assess-skip-all" type="button"
+                    onClick={() => setAssessDone(true)}>
+                    <span className="skip-all-full">Skip all remaining questions</span>
+                    <span className="skip-all-mobile">Skip all</span>
+                  </button>
+                )}
                 {!current.required && assessStep < totalSteps && (
                   <button className="btn btn-ghost"
-                    onClick={() => setAssessStep(s => s + 1)}>
+                    onClick={() => moveStep(1)}>
                     Skip
                   </button>
                 )}
 
                 {assessStep < totalSteps ? (
                   <button className="btn btn-pri"
-                    onClick={() => setAssessStep(s => s + 1)}
+                    onClick={nextStep}
                     disabled={current.required && !current.valid}>
                     Next Step →
                   </button>
@@ -437,7 +515,7 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
               </div>
             </div>
 
-            <div style={{
+            <div className={assessStep <= 2 ? "sr-only" : "assess-step-status"} style={{
               fontSize: '0.76rem',
               marginTop: '0.6rem',
               textAlign: 'right',
@@ -453,7 +531,8 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
       ) : !result ? (
         !analyzing ? (
           /* ============ UPLOAD ============ */
-          <div className="card" style={{ marginBottom: 0 }}>
+          <>
+          <div className="card upload-card" style={{ marginBottom: 0 }}>
             <div className="card-h">
               <div className="card-t">Upload Skin Photo</div>
               <span className="badge b-confirmed">Assessment Complete</span>
@@ -463,90 +542,36 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
                 Pre-analysis assessment complete. Upload your photo to proceed.
               </div>
 
-              {/* CONSENT */}
-              <div
-                className={showConsentWarning ? "shake" : ""}
-                onClick={() => { setPhotoConsent(!photoConsent); setShowConsentWarning(false); }}
-                style={{
-                  display: "flex", gap: "0.75rem", alignItems: "flex-start",
-                  padding: "1rem", marginBottom: "1rem", cursor: "pointer",
-                  borderRadius: "var(--r)",
-                  border: photoConsent ? "2px solid var(--ok)"
-                    : showConsentWarning ? "2px solid var(--dan)"
-                    : "2px solid var(--acc)",
-                  background: photoConsent ? "var(--ok-l)"
-                    : showConsentWarning ? "var(--dan-l)"
-                    : "var(--acc-l)",
-                }}
-              >
-                <div style={{
-                  width: 24, height: 24, borderRadius: 6, flexShrink: 0, marginTop: 2,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: "0.9rem", fontWeight: 700, color: "#fff",
-                  border: photoConsent ? "none" : "2px solid var(--text3)",
-                  background: photoConsent ? "var(--ok)" : "#fff",
-                }}>
-                  {photoConsent ? <AppIcon name="check" /> : ""}
-                </div>
-
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: "0.88rem", marginBottom: "0.3rem" }}>
-                    {photoConsent ? <><AppIcon name="check" /> Consent given</> : <><AppIcon name="shield" /> Photo consent required</>}
-                  </div>
-                  <div style={{ fontSize: "0.8rem", lineHeight: 1.65, color: "var(--text2)" }}>
-                    I consent to AcneCare AI storing my facial image for analysis and
-                    sharing it with dermatologists I book. I can delete it at any time
-                    from my profile.
-                  </div>
-                </div>
-              </div>
-
-              {showConsentWarning && (
-                <div className="alert al-dan" style={{
-                  fontSize: "0.9rem", fontWeight: 700,
-                  padding: "1rem", border: "2px solid var(--dan)",
-                }}>
-                  <span style={{ fontSize: "1.2rem" }}><AppIcon name="alert" /></span>
-                  Please tick the consent box above before uploading your photo.
-                </div>
-              )}
-
               {!selectedFile ? (
                 /* ---- no photo yet ---- */
                 <>
-                  <div onClick={() => {
-                    if (!photoConsent) {
-                      setShowConsentWarning(false);
-                      setTimeout(() => setShowConsentWarning(true), 10);
-                    }
-                  }}>
-                    <label
-                      className="upload-zone"
-                      style={{
-                        opacity: photoConsent ? 1 : 0.55,
-                        pointerEvents: photoConsent ? "auto" : "none",
-                      }}
-                    >
+                    <label className="upload-zone">
                       <input
                         type="file"
                         className="upload-input"
                         accept="image/jpeg,image/png,image/webp"
                         onChange={handleFile}
                       />
-                      <div style={{ fontSize: "2.5rem", marginBottom: "0.65rem" }}><AppIcon name="cameraAdd" /></div>
-                      <div style={{ fontWeight: 700, marginBottom: "0.35rem", fontSize: "0.95rem" }}>
+                      <div className="upload-zone-icon"><AppIcon name="cameraAdd" /></div>
+                      <div className="upload-zone-title">
                         Drop image or click to upload
                       </div>
-                      <div style={{ fontSize: "0.8rem", color: "var(--text3)" }}>
+                      <div className="upload-zone-meta">
                         JPG, PNG, WEBP • Max 5MB • Clear face photo
                       </div>
                     </label>
-                  </div>
+                  {photoConsentControl}
 
-                  <div className="image-tips">
-                    {PHOTO_TIPS.slice(0, 4).map(([ic, tip]) => (
-                      <div key={tip} className="img-tip"><span><AppIcon emoji={ic} /></span><span>{tip}</span></div>
-                    ))}
+                  <div className="best-results">
+                    <div className="best-results-title">For best results</div>
+                    <div className="best-results-grid">
+                      {UPLOAD_TIPS.map(([icon, tip]) => (
+                        <div key={tip} className="best-result-tip">
+                          <AppIcon name={icon} />
+                          <span>{tip}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </>
               ) : (
@@ -564,15 +589,7 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
                       <AppIcon name="check" /> Photo ready
                     </div>
 
-                    <img
-                      src={previewUrl}
-                      alt="Selected"
-                      style={{
-                        width: "100%", maxWidth: 180, borderRadius: 10,
-                        display: "block", margin: "0 auto 0.85rem",
-                        border: "1px solid var(--border)",
-                      }}
-                    />
+                    <img className="selected-skin-photo" src={previewUrl} alt="Selected skin photo" />
 
                     <div style={{
                       fontSize: "0.78rem", color: "var(--text2)",
@@ -581,18 +598,19 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
                       {selectedFile.name} · {(selectedFile.size / 1024).toFixed(0)} KB
                     </div>
 
-                    <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", flexWrap: "wrap" }}>
-                      <label className="btn btn-ghost btn-sm" style={{ cursor: "pointer" }}>
+                    <div className="scan-photo-actions">
+                      <label className="btn btn-sm scan-photo-change">
                         <input type="file" style={{ display: "none" }}
                           accept="image/jpeg,image/png,image/webp"
                           onChange={handleFile} />
-                        <AppIcon name="activity" /> Change Photo
+                        <AppIcon name="gallery" /> Change Photo
                       </label>
-                      <button className="btn btn-ghost btn-sm" onClick={clearPhoto}>
+                      <button type="button" className="btn btn-sm scan-photo-remove" onClick={clearPhoto}>
                         <AppIcon name="trash" /> Remove
                       </button>
                     </div>
                   </div>
+                  {photoConsentControl}
 
                   <button
                     className="btn btn-pri btn-lg btn-full"
@@ -609,6 +627,8 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
               </button>
             </div>
           </div>
+          <Disclaimer variant="ai" compact />
+          </>
 
         ) : (
           /* ============ PROCESSING ============ */
@@ -619,27 +639,34 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
             <div className="card-b" style={{ textAlign: 'center', padding: '2rem 1rem' }}>
 
               {previewUrl && (
-                <img src={previewUrl} alt="Analysing"
-                  style={{
-                    width: 130, height: 130, objectFit: "cover",
-                    borderRadius: "50%", margin: "0 auto 1.25rem",
-                    display: "block", border: "3px solid var(--pri)",
-                    opacity: 0.85,
-                  }} />
+                <div
+                  className="scan-progress-ring"
+                  role="progressbar"
+                  aria-label="AI analysis progress"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={progress}
+                >
+                  <img className="scan-progress-photo" src={previewUrl} alt="Your skin photo being analysed" />
+                  <svg viewBox="0 0 160 160" aria-hidden="true">
+                    <circle className="scan-progress-track" cx="80" cy="80" r="74" />
+                    <circle
+                      className="scan-progress-fill"
+                      cx="80" cy="80" r="74"
+                      style={{ strokeDashoffset: 465 * (1 - progress / 100) }}
+                    />
+                  </svg>
+                </div>
               )}
 
               <div style={{ fontWeight: 700, marginBottom: '0.5rem', fontSize: '1rem' }}>
-                {progress < 100 ? "Uploading your photo..." : "Analysing your skin..."}
+                {progress < 75 ? "Uploading your photo..." : "Analysing your skin..."}
               </div>
 
               <div style={{ fontSize: '0.84rem', color: 'var(--text3)', marginBottom: '1.25rem' }}>
-                {progress < 100
+                {progress < 75
                   ? "Sending your image securely"
                   : "Detecting acne type, severity and confidence"}
-              </div>
-
-              <div className="prog-bar">
-                <div className="prog-fill" style={{ width: `${progress}%` }} />
               </div>
 
               <div style={{
@@ -647,13 +674,9 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
                 color: 'var(--text2)', display: 'flex',
                 justifyContent: 'center', gap: '1.25rem',
               }}>
-                <span><AppIcon name="upload" /> {progress}%</span>
-                <span><AppIcon name="clock" /> {elapsed}s</span>
+                <span>{progress}% complete</span>
               </div>
 
-              <div style={{ marginTop: '1.25rem', fontSize: '0.74rem', color: 'var(--text3)' }}>
-                This usually takes 3–5 seconds
-              </div>
             </div>
           </div>
         )
@@ -663,27 +686,24 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
         <>
           <div className="an-result" style={{ marginBottom: '1rem' }}>
             <div className="an-h">
-              <div className="an-ic"><AppIcon name="activity" /></div>
-              <div>
+              <img className="an-result-photo" src={previewUrl} alt="Analysed skin photo" />
+              <div className="an-result-type">
                 <div className="an-t">{result.atype}</div>
-                <div style={{ fontSize: '0.78rem', opacity: 0.65 }}>Detected Type</div>
+                <div className="an-result-caption">Detected Type</div>
               </div>
-              <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>{result.sev}</div>
-                <div style={{ fontSize: '0.72rem', opacity: 0.65 }}>Severity</div>
+              <div className="an-result-severity">
+                <div className="an-result-severity-value">{result.sev}</div>
+                <div className="an-result-caption">Severity</div>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', margin: '0.85rem 0' }}>
+            <div className="an-result-metrics">
               {[['SEVERITY', result.sev],
                 ['CONFIDENCE', `${result.conf}%`],
                 ['SKIN TYPE', result.skinType || form.skinType || '—']].map(([k, v]) => (
-                <div key={k} style={{
-                  background: 'rgba(255,255,255,0.08)',
-                  borderRadius: 8, padding: '0.6rem', textAlign: 'center'
-                }}>
-                  <div style={{ fontSize: '0.68rem', opacity: 0.65, marginBottom: '0.25rem' }}>{k}</div>
-                  <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{v}</div>
+                <div key={k} className={`an-result-metric ${k === 'SKIN TYPE' ? 'an-result-metric-skin' : ''}`}>
+                  <div className="an-result-metric-label">{k}</div>
+                  <div className="an-result-metric-value">{v}</div>
                 </div>
               ))}
             </div>
@@ -732,17 +752,38 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
             </div>
           )}
 
-          <div className="card">
-            <div className="card-h">
-              <div className="card-t">Analysed Image</div>
+          <section className="next-steps-panel" aria-labelledby="next-steps-heading">
+            <header className="next-steps-heading">
+              <div className="next-steps-heading-icon"><AppIcon name="clipboard" /></div>
+              <div>
+                <h2 id="next-steps-heading">Next Steps</h2>
+              </div>
+              <div className="next-steps-saved-badge" role="status"><AppIcon name="check" /> Analysis saved</div>
+            </header>
+
+            <div className="next-steps-grid">
+              <button className="next-step-action next-step-diet" onClick={() => setPage("diet")}>
+                <span className="next-step-icon"><AppIcon name="document" /></span>
+                <span className="next-step-copy"><strong>View Diet Plan</strong><span>See your personalized diet recommendations</span></span>
+                <span className="next-step-arrow"><AppIcon name="arrowRight" /></span>
+              </button>
+              <button className="next-step-action next-step-routine" onClick={() => setPage("skincare")}>
+                <span className="next-step-icon"><AppIcon name="leaf" /></span>
+                <span className="next-step-copy"><strong>View Routine</strong><span>Check your skincare routine plan</span></span>
+                <span className="next-step-arrow"><AppIcon name="arrowRight" /></span>
+              </button>
+              <button className="next-step-action next-step-doctor" onClick={() => setPage("book")}>
+                <span className="next-step-icon"><AppIcon name="calendar" /></span>
+                <span className="next-step-copy"><strong>Book Doctor</strong><span>Schedule a consultation with a dermatologist</span></span>
+                <span className="next-step-arrow"><AppIcon name="arrowRight" /></span>
+              </button>
+              <button className="next-step-action next-step-scan" onClick={reset}>
+                <span className="next-step-icon"><AppIcon name="camera" /></span>
+                <span className="next-step-copy"><strong>New Scan</strong><span>Run another AI skin analysis</span></span>
+                <span className="next-step-arrow"><AppIcon name="arrowRight" /></span>
+              </button>
             </div>
-            <div className="card-b">
-              <ScanImage
-                scanId={result._id}
-                style={{ width: "100%", maxWidth: 220, borderRadius: 12, display: "block", margin: "0 auto" }}
-              />
-            </div>
-          </div>
+          </section>
 
           <div className="card">
             <div className="card-h">
@@ -753,23 +794,6 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
                 {result.atype} are a common form of acne that affects people of all ages.
                 Based on our analysis, your condition is classified as <strong>{result.sev}</strong> severity.
                 With proper treatment and skincare routine, significant improvement can be seen within 6-8 weeks.
-              </div>
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="card-h">
-              <div className="card-t">Next Steps</div>
-            </div>
-            <div className="card-b">
-              <div className="alert al-ok">
-                Analysis saved! You can now view your diet plan or book a dermatologist.
-              </div>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <button className="btn btn-pri btn-sm" onClick={() => setPage("diet")}>View Diet Plan</button>
-                <button className="btn btn-pri btn-sm" onClick={() => setPage("routine")}>View Routine</button>
-                <button className="btn btn-pri btn-sm" onClick={() => setPage("book")}>Book Doctor</button>
-                <button className="btn btn-ghost btn-sm" onClick={reset}>New Scan</button>
               </div>
             </div>
           </div>

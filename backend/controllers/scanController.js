@@ -1,7 +1,7 @@
 const Scan = require("../models/Scan");
 const User = require("../models/User");
-const fs   = require("fs");
-const path = require("path");
+const Appointment = require("../models/Appointment");
+const { saveFile, deleteFile, sendStoredFile } = require("../services/fileStorage");
 
 // DB shape ko frontend shape mein badlo
 const format = (s) => ({
@@ -32,16 +32,10 @@ const format = (s) => ({
    ========================================================= */
 const ML_URL = process.env.ML_SERVICE_URL || "http://localhost:8000";
 
-const predictAcne = async (imagePath) => {
-  const buffer = fs.readFileSync(imagePath);
-
+// file = multer memory file (buffer + mimetype)
+const predictAcne = async (file) => {
   const form = new FormData();
-const ext = path.extname(imagePath).toLowerCase();
-  const mime = ext === ".png"  ? "image/png"
-             : ext === ".webp" ? "image/webp"
-             : "image/jpeg";
-
-  form.append("image", new Blob([buffer], { type: mime }), path.basename(imagePath));
+  form.append("image", new Blob([file.buffer], { type: file.mimetype }), file.originalname || "scan.jpg");
   const res = await fetch(`${ML_URL}/predict`, { method: "POST", body: form });
 
   if (!res.ok) {
@@ -73,10 +67,9 @@ const createScan = async (req, res) => {
 
 let result;
     try {
-      result = await predictAcne(req.file.path);
+      result = await predictAcne(req.file);
     } catch (err) {
-      fs.unlink(req.file.path, () => {});
-
+      // abhi tak kuch save nahi hua, isliye hatane ko kuch nahi
       if (err.validation) {
         return res.status(400).json({ message: err.message });
       }
@@ -88,16 +81,25 @@ let result;
     }
     const cleanSkin = (req.body.skinType || "").trim();
 
+    // analysis kamyab hua — ab photo save karo (Cloudinary ya local)
+    let imageUrl;
+    try {
+      imageUrl = await saveFile(req.file, { kind: "scans", name: `scan-${req.user._id}` });
+    } catch (err) {
+      console.error("Scan image save failed:", err.message);
+      return res.status(503).json({ message: "Could not save your photo. Please try again shortly." });
+    }
+
     const scan = await Scan.create({
       patient:    req.user._id,
-      imageUrl:   `/uploads/${req.file.filename}`,
+      imageUrl,
       acneType:   result.acneType,
       severity:   result.severity,
       confidence: result.confidence,
       probs:      result.probs,
       cystFlag:   result.cystFlag,
       cystProb:   result.cystProb,
-      skinType:   cleanSkin || req.user.skinType || "",
+      skinType:   req.body.skinType === undefined ? (req.user.skinType || "") : cleanSkin,
       questionnaire,
     });
 
@@ -118,9 +120,11 @@ let result;
 const getMyScans = async (req, res) => {
   try {
     const scans = await Scan.find({ patient: req.user._id })
-      .populate("patient", "name email")
       .sort({ createdAt: -1 });
-    res.json(scans.map(format));
+    res.json(scans.map((scan) => ({
+      ...format(scan),
+      pname: req.user.name || "",
+    })));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -145,6 +149,14 @@ const getScanById = async (req, res) => {
 // GET /api/scans/patient/:patientId   (doctor / admin)
 const getPatientScans = async (req, res) => {
   try {
+    if (req.user.role === "dermatologist") {
+      const hasAppointment = await Appointment.exists({
+        patient: req.params.patientId,
+        doctor: req.user._id,
+      });
+      if (!hasAppointment) return res.status(403).json({ message: "Not authorized to view this patient's scans" });
+    }
+
     const scans = await Scan.find({ patient: req.params.patientId })
       .populate("patient", "name email skinType")
       .sort({ createdAt: -1 });
@@ -178,10 +190,7 @@ const deleteScan = async (req, res) => {
     }
 
     // file bhi delete kar do
-    if (scan.imageUrl) {
-      const filePath = path.join(__dirname, "..", scan.imageUrl);
-      fs.unlink(filePath, () => {});
-    }
+    await deleteFile(scan.imageUrl);
 
     await scan.deleteOne();
     res.json({ message: "Scan deleted" });
@@ -202,16 +211,12 @@ const getScanImage = async (req, res) => {
     if (!isOwner && !isStaff) {
       return res.status(403).json({ message: "Not authorized to view this image" });
     }
-
-    // basename lena zaroori hai — warna ../../ se koi bhi file mang sakta hai
-    const filename = path.basename(scan.imageUrl);
-    const filePath = path.join(__dirname, "..", "uploads", filename);
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ message: "Image file missing" });
+    if (req.user.role === "dermatologist") {
+      const hasAppointment = await Appointment.exists({ patient: scan.patient, doctor: req.user._id });
+      if (!hasAppointment) return res.status(403).json({ message: "Not authorized to view this patient's image" });
     }
 
-    res.sendFile(filePath);
+    await sendStoredFile(res, scan.imageUrl, "Image file missing");
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -228,8 +233,7 @@ const deleteScanImage = async (req, res) => {
     }
 
     if (scan.imageUrl) {
-      const filePath = path.join(__dirname, "..", "uploads", path.basename(scan.imageUrl));
-      fs.unlink(filePath, () => {});
+      await deleteFile(scan.imageUrl);
       scan.imageUrl = "";
       await scan.save();
     }

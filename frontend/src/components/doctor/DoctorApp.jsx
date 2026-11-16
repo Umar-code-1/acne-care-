@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import DocDash from './DocDash';
 import DocAppts from './DocAppts';
 import DocPatients from './DocPatients';
 import DocRx from './DocRx';
 import DocProfile from './DocProfile';
 import DocPayments from './DocPayments';
+import DocPlatformFee from './DocPlatformFee';
 
 export default function DoctorApp({
   page,
@@ -18,6 +19,7 @@ export default function DoctorApp({
   refresh,
   notify,
 }) {
+  const [selectedPatientId, setSelectedPatientId] = useState("");
   // Backend pehle hi sirf is doctor ka data bhejta hai — dobara filter ki zaroorat nahi
   const myAppts = appointments;
   const myRx = prescriptions;
@@ -41,6 +43,8 @@ export default function DoctorApp({
         user={user}
         appts={myAppts}
         appointments={myAppts}
+        selectedPatientId={selectedPatientId}
+        setSelectedPatientId={setSelectedPatientId}
         setAppointments={setAppointments}
         refresh={refresh}
         notify={notify}
@@ -54,6 +58,7 @@ export default function DoctorApp({
         appts={myAppts}
         analyses={analyses}
         setPage={setPage}
+        setSelectedPatientId={setSelectedPatientId}
       />
     );
   }
@@ -74,7 +79,11 @@ export default function DoctorApp({
   }
 
   if (page === 'payments') {
-    return <DocPayments notify={notify} />;
+    return <DocPayments notify={notify} refresh={refresh} />;
+  }
+
+  if (page === 'platform-fee') {
+    return <DocPlatformFee notify={notify} />;
   }
 
   if (page === 'profile') {

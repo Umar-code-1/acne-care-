@@ -1,107 +1,71 @@
 // src/components/shared/RxCard.jsx
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import AppIcon from "./AppIcon";
+import PrescriptionChat from "./PrescriptionChat";
 
-function RxCard({ rx, showPatient, showDoctor }) {
-  const [tab, setTab] = useState("meds");
-
+function RxCard({ rx, showPatient, showDoctor, instructionMode }) {
+  const [openChannel, setOpenChannel] = useState("");
+  const [unreadChatCount, setUnreadChatCount] = useState(rx.unreadChatCount || 0);
+  useEffect(() => setUnreadChatCount(rx.unreadChatCount || 0), [rx.unreadChatCount]);
+  const date = rx.date ? new Date(`${rx.date}T12:00:00`) : null;
+  const formattedDate = date && !Number.isNaN(date.valueOf())
+    ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date)
+    : "Date unavailable";
+  const planId = String(rx.id || "").slice(-8).toUpperCase();
+  const instructionCount = rx.inst
+    ? String(rx.inst).split(/[.!?\n]+/).filter(Boolean).length
+    : 0;
   return (
-    <div className="rx-card">
+    <div className="rx-card" data-notification-prescription={rx._id || rx.id}
+      data-notification-plan-appointment={rx.apid || undefined} tabIndex={-1}>
       <div className="rx-h">
-        <div>
-          <div className="rx-t">Skincare Plan #{rx.id}</div>
+        <div className="rx-heading">
+          <div className="rx-document-icon"><AppIcon name="document" /></div>
+          <div className="rx-heading-copy">
+          <div className="rx-t">Skincare Plan{planId && ` #SKP-${planId}`}</div>
           {showPatient && (
-            <div className="rx-d">
+            <div className="rx-d rx-patient-meta">
               Patient <strong>{rx.pname}</strong>
             </div>
           )}
           {showDoctor && (
             <div className="rx-d">
-              Dr <strong>{rx.dname}</strong>
+              <AppIcon name="profile" /> Dr <strong>{rx.dname}</strong>
+              {rx.dqual && <><span className="rx-meta-divider">|</span>{rx.dqual}</>}
             </div>
           )}
+          </div>
         </div>
-        <div className="rx-d">{rx.date}</div>
+        <div className="rx-date"><AppIcon name="calendar" /> {formattedDate}</div>
       </div>
 
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.85rem" }}>
-        {["meds", "skincare", "diet", "instructions"].map((t) => (
+      {instructionMode && <div className="rx-actions-row">
+        <div className="rx-tabs rx-instructions-only">
           <button
-            key={t}
-            className={`btn btn-sm ${tab === t ? "btn-pri" : "btn-ghost"}`}
-            onClick={() => setTab(t)}
+            type="button"
+            className="rx-tab active rx-instructions-trigger"
+            onClick={() => setOpenChannel("instructions")}
           >
-            {t === "meds"
-              ? "Medications"
-              : t === "skincare"
-              ? "Skincare"
-              : t === "diet"
-              ? "Diet"
-              : "Instructions"}
+            <AppIcon name="document" />
+            <span>Instructions</span>
+            <span className="rx-tab-count">{instructionCount}</span>
           </button>
-        ))}
-      </div>
-
-      {tab === "meds" && (
-        <div>
-          {rx.meds.map((m, i) => (
-            <div key={i} className="med-item">
-              <div className="med-h">
-                <span className="med-n">{m.n}</span>
-                <span className={`mbt ${m.t === "Oral" ? "mb-o" : "mb-t"}`}>
-                  {m.t}
-                </span>
-              </div>
-              <div className="med-d">{m.u}</div>
-              <div className="med-d" style={{ marginTop: 4 }}>
-                Duration: {m.d}
-              </div>
-            </div>
-          ))}
         </div>
-      )}
+        <button type="button" className="rx-reply-button" onClick={() => { setUnreadChatCount(0); setOpenChannel("chat"); }}>
+          <AppIcon name="chat" /> {instructionMode === "doctor" ? "Chat with Patient" : "Chat with Doctor"}
+          {unreadChatCount > 0 && <span className="rx-chat-unread-count" aria-label={`${unreadChatCount} unread messages`}>{unreadChatCount > 99 ? "99+" : unreadChatCount}</span>}
+        </button>
+      </div>}
 
-      {tab === "skincare" && (
-        <div>
-          {rx.skincare && rx.skincare.length > 0 ? (
-            rx.skincare.map((s, i) => (
-              <div key={i} className="skincare-step">
-                <div className="sk-num">{i + 1}</div>
-                <div>
-                  <div className="sk-name">{s.product}</div>
-                  <div
-                    style={{
-                      fontSize: "0.76rem",
-                      color: "var(--text2)",
-                      marginTop: 4,
-                    }}
-                  >
-                    {s.step} — {s.tip}
-                  </div>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="alert al-info">
-              No specific skincare routine added to this plan.
-            </div>
-          )}
-        </div>
-      )}
-
-      {tab === "diet" && (
-        <div className="diet-eat">
-          <div className="diet-title">Diet Instructions</div>
-          <p style={{ fontSize: "0.82rem", color: "var(--text2)" }}>
-            {rx.diet || "No specific diet instructions added."}
-          </p>
-        </div>
-      )}
-
-      {tab === "instructions" && (
-        <div className="alert al-info">
-          {rx.inst || "No special instructions provided."}
-        </div>
-      )}
+      {openChannel && <PrescriptionChat
+        prescriptionId={rx._id || rx.id}
+        recipientName={instructionMode === "doctor" ? rx.pname : `Dr. ${rx.dname || "your doctor"}`}
+        initialInstruction={openChannel === "instructions" ? rx.inst : ""}
+        channel={openChannel}
+        readOnly={openChannel === "instructions" && instructionMode !== "doctor"}
+        sendLabel={openChannel === "instructions" ? "Send Instructions" : "Send Message"}
+        onClose={() => setOpenChannel("")}
+      />}
     </div>
   );
 }

@@ -1,13 +1,33 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import API from "../../api";
 import AppIcon from "./AppIcon";
 
 export default function ScanImage({ scanId, alt = "Skin scan", className, style }) {
   const [src, setSrc] = useState("");
   const [status, setStatus] = useState("loading");
+  const [shouldLoad, setShouldLoad] = useState(false);
+  const imageRef = useRef(null);
 
   useEffect(() => {
-    if (!scanId) return;
+    const node = imageRef.current;
+    if (!node) return undefined;
+    if (!("IntersectionObserver" in window)) {
+      setShouldLoad(true);
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setShouldLoad(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: "120px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [scanId]);
+
+  useEffect(() => {
+    if (!scanId || !shouldLoad) return undefined;
     let url;
     let cancelled = false;
 
@@ -27,7 +47,7 @@ export default function ScanImage({ scanId, alt = "Skin scan", className, style 
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [scanId]);
+  }, [scanId, shouldLoad]);
 
   const box = {
     display: "flex",
@@ -46,12 +66,12 @@ export default function ScanImage({ scanId, alt = "Skin scan", className, style 
   };
 
   if (status === "loading") {
-    return <div className={className} style={box}><AppIcon name="clock" /></div>;
+    return <div ref={imageRef} className={className} style={box}><AppIcon name="clock" /></div>;
   }
 
   if (status === "deleted") {
     return (
-      <div className={className} style={box}>
+      <div ref={imageRef} className={className} style={box}>
         <span style={{ fontSize: "1.2rem" }}><AppIcon name="trash" /></span>
         <span>Image deleted<br />by patient</span>
       </div>

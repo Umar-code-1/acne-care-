@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import AppIcon from "../shared/AppIcon";
 import ScanImage from '../shared/ScanImage';
 
-export default function DocPatients({ appts = [], analyses = [], setPage, onSelectPatient }) {
+export default function DocPatients({ appts = [], analyses = [], setPage, setSelectedPatientId, onSelectPatient }) {
   const [query, setQuery] = useState("");
 
   const ids = [...new Set(appts.map(a => a.pid).filter(Boolean))];
@@ -44,7 +44,7 @@ export default function DocPatients({ appts = [], analyses = [], setPage, onSele
           <input
             className="form-i"
             style={{ maxWidth: 280 }}
-            placeholder="Search patient by name..."
+            placeholder="Search patient by name or ID..."
             value={query}
             onChange={e => setQuery(e.target.value)}
           />
@@ -152,6 +152,18 @@ export default function DocPatients({ appts = [], analyses = [], setPage, onSele
                 )}
 
                 {/* actions */}
+                {setPage && setSelectedPatientId && (
+                  <button
+                    className="btn btn-ghost btn-sm btn-full doctor-patient-appointments-button"
+                    type="button"
+                    onClick={() => {
+                      setSelectedPatientId(p.id);
+                      setPage("appointments");
+                    }}
+                  >
+                    <AppIcon name="calendar" /> View all appointments
+                  </button>
+                )}
                 {onSelectPatient && (
                   <button
                     className="btn btn-pri btn-sm btn-full"

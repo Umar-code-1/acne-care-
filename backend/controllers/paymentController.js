@@ -1,6 +1,6 @@
 const Appointment = require("../models/Appointment");
-const path = require("path");
-const fs = require("fs");
+const { saveFile, deleteFile, sendStoredFile } = require("../services/fileStorage");
+const { createNotifications, getAdminIds } = require("../services/notifications");
 
 
 // GET /api/payments/details
@@ -15,14 +15,18 @@ const getPaymentDetails = async (req, res) => {
     }
 
     const d = appt.doctor;
-    if (!d?.accountNumber && !d?.jazzcash && !d?.easypaisa) {
+    if (!d) return res.status(404).json({ message: "The dermatologist account for this appointment is unavailable." });
+    const hasBankTransfer = Boolean(d?.bankName && d?.accountTitle && d?.accountNumber);
+    const hasWallet = Boolean(d?.jazzcash || d?.easypaisa);
+    if (!hasBankTransfer && !hasWallet) {
       return res.status(400).json({
-        message: "This doctor hasn't added payment details yet. Please contact support.",
+        message: "This dermatologist's payment details are incomplete. Please contact support before transferring any money.",
       });
     }
 
     res.json({
       doctorName:    d.name,
+      hasBankTransfer,
       bankName:      d.bankName,
       accountTitle:  d.accountTitle,
       accountNumber: d.accountNumber,
@@ -50,12 +54,34 @@ const submitProof = async (req, res) => {
     if (appt.paymentStatus === "paid") {
       return res.status(400).json({ message: "This appointment is already paid" });
     }
+    if (!["unpaid", "rejected"].includes(appt.paymentStatus)) {
+      return res.status(409).json({
+        message: "A receipt is already awaiting verification. Please wait for the payment review before submitting another.",
+      });
+    }
 
-    appt.paymentProof   = `/uploads/payments/${req.file.filename}`;
+    // rejected receipt dobara bheja ho to purani file hata do
+    const oldProof = appt.paymentProof;
+    appt.paymentProof   = await saveFile(req.file, { kind: "payments", name: `proof-${appt._id}` });
+    if (oldProof) await deleteFile(oldProof);
     appt.transactionRef = (req.body.transactionRef || "").trim();
     appt.paymentStatus  = "pending_verification";
     appt.paymentNote    = "";
     await appt.save();
+
+    const admins = await getAdminIds();
+    await createNotifications({
+      recipients: [
+        { id: appt.doctor, targetPage: "payments" },
+        { id: req.user._id, targetPage: "appointments" },
+        ...admins.map((id) => ({ id, targetPage: "appointments" })),
+      ],
+      actor: req.user._id,
+      appointment: appt._id,
+      type: "payment_proof",
+      title: "Payment receipt uploaded",
+      message: `${req.user.name || "A patient"} submitted a payment receipt for ${appt.date} at ${appt.time}.`,
+    });
 
     res.json({
       message: "Receipt submitted. We'll verify within a few hours.",
@@ -107,12 +133,7 @@ const getProofImage = async (req, res) => {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    const filePath = path.join(__dirname, "..", "uploads", "payments",
-                               path.basename(appt.paymentProof));
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ message: "Receipt file missing" });
-    }
-    res.sendFile(filePath);
+    await sendStoredFile(res, appt.paymentProof, "Receipt file missing");
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -134,6 +155,17 @@ const isDoctor = appt.doctor.toString() === req.user._id.toString();
     appt.paidAt        = approve ? new Date() : undefined;
     appt.verifiedBy    = approve ? req.user._id : undefined;
     await appt.save();
+
+    await createNotifications({
+      recipients: [{ id: appt.patient, targetPage: "appointments" }],
+      actor: req.user._id,
+      appointment: appt._id,
+      type: approve ? "payment_verified" : "payment_rejected",
+      title: approve ? "Payment verified" : "Payment needs attention",
+      message: approve
+        ? `Your payment for the appointment on ${appt.date} has been verified.`
+        : `Your payment for the appointment on ${appt.date} was not verified. ${appt.paymentNote}`,
+    });
 
     res.json({
       message: approve ? "Payment verified" : "Payment rejected",

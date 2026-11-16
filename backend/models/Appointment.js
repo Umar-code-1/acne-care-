@@ -34,6 +34,7 @@ const appointmentSchema = new mongoose.Schema({
     enum: ["pending", "confirmed", "completed", "cancelled"],
     default: "pending" 
   },
+  completionUndoUntil: Date,
   meetingLink: { 
     type: String, 
     default: "" 
