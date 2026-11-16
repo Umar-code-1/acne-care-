@@ -2,6 +2,7 @@ const express   = require("express");
 const cors      = require("cors");
 const dotenv    = require("dotenv");
 const path      = require("path");
+const mongoose  = require("mongoose");
 const connectDB = require("./config/db");
 const { apiLimiter } = require("./middleware/rateLimit");
 dotenv.config();
@@ -14,6 +15,16 @@ app.use(express.json({ limit: "4mb" }));
 
 // uploaded images ko public serve karo
 app.use("/api", apiLimiter);
+
+// Database abhi connect nahi hua to saaf message bhejo (request hang na ho)
+app.use("/api", (req, res, next) => {
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({
+      message: "The server is starting up or can't reach the database. Please try again in a few seconds.",
+    });
+  }
+  next();
+});
 
 app.use("/api/auth",         require("./routes/authRoutes"));
 app.use("/api/notifications", require("./routes/notificationRoutes"));
@@ -42,8 +53,8 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-connectDB().then(() => {
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
+// Server foran start karo; MongoDB background mein connect (aur retry) hota rahega
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
+connectDB();

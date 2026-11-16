@@ -17,10 +17,9 @@ A final-year project for AI-assisted acne assessment and skincare support. The p
 
 ## Run locally
 
-1. Install the API dependencies: `cd backend && npm install`.
+1. Install everything from the project root: `npm run install:all`.
 2. Copy `backend/.env.example` to `backend/.env` and fill in your own MongoDB, JWT, Cloudinary, payment, and model-service settings.
-3. Start the API: `cd backend && npm run dev`.
-4. In another terminal, install the web dependencies and start Vite: `cd frontend && npm install && npm run dev`.
-5. Set up the Python model service from the `model/` folder with `pip install -r requirements.txt`, then run `uvicorn main:app --host 0.0.0.0 --port 8000`.
+3. Start the API and the web app together from the project root: `npm run dev`. The API starts right away and keeps retrying MongoDB Atlas until it connects; until then it answers with a "try again in a few seconds" message.
+4. Set up the Python model service from the `model/` folder with `pip install -r requirements.txt`, then run `uvicorn main:app --host 0.0.0.0 --port 8000`.
 
 Keep real credentials and uploaded patient images out of Git. The `.env` file and `backend/uploads/` are ignored.
