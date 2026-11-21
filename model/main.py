@@ -99,7 +99,8 @@ except ImportError:
 print("Loading model...")
 interpreter = Interpreter(
     model_path=os.path.join(BASE, "acne_type_model_fp16.tflite"),
-    num_threads=os.cpu_count() or 1,
+    # Render free has 0.1 CPU but reports the host's cores; more threads just fight.
+    num_threads=int(os.environ.get("TFLITE_THREADS") or os.cpu_count() or 1),
 )
 interpreter.allocate_tensors()
 IN_IDX  = interpreter.get_input_details()[0]["index"]
