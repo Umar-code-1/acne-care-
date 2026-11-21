@@ -536,6 +536,14 @@ html:has(.auth-dialog[open]){overflow:hidden}
 .prob-item{background:rgba(255,255,255,0.07);border-radius:8px;padding:0.5rem}
 .prob-n{font-size:0.7rem;opacity:0.65}
 .prob-v{font-size:0.95rem;font-weight:700}
+.an-rescan{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,0.18)}
+.an-rescan-copy{display:flex;flex-direction:column;gap:0.15rem;min-width:0}
+.an-rescan-copy strong{font-size:0.9rem}
+.an-rescan-copy span{font-size:0.76rem;opacity:0.75}
+.an-rescan-btn{position:relative;overflow:hidden;flex-shrink:0;background:#fff;color:var(--pri-d);border:1px solid #fff;font-weight:700;white-space:nowrap}
+.an-rescan-btn:hover{background:#fff3ec;transform:translateY(-1px)}
+.an-rescan-btn:focus-within{outline:2px solid #fff;outline-offset:2px}
+@media(max-width:560px){.an-rescan{flex-direction:column;align-items:stretch;text-align:center;gap:0.75rem}.an-rescan-btn{width:100%;justify-content:center}}
 .diet-g{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem}
 .diet-eat{background:var(--ok-l);border:1px solid #a9dfbf;border-radius:var(--r);padding:1.1rem}
 .diet-av{background:var(--dan-l);border:1px solid #f5c6c2;border-radius:var(--r);padding:1.1rem}

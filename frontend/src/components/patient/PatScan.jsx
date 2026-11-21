@@ -361,8 +361,8 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
   };
 
   // button dabane par asli upload
-  const startAnalysis = async () => {
-    if (!selectedFile) return;
+  const startAnalysis = async (file = selectedFile) => {
+    if (!file) return;
     if (!photoConsent) {
       setShowConsentWarning(true);
       return;
@@ -372,7 +372,7 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
     setProgress(0);
 
     const fd = new FormData();
-    fd.append("image", selectedFile);
+    fd.append("image", file);
     fd.append("skinType", form.skinType);
     fd.append("questionnaire", JSON.stringify({
       name:        form.name,
@@ -407,6 +407,22 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
     } finally {
       setAnalyzing(false);
     }
+  };
+
+  // Result screen: pick a new photo and scan again with the same assessment answers.
+  const scanAgain = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || analyzing) return;
+    if (file.size > 5 * 1024 * 1024) {
+      notify("❌ Image too large. Maximum size is 5MB.");
+      return;
+    }
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+    setResult(null);
+    startAnalysis(file);
   };
 
   const photoConsentControl = (
@@ -614,7 +630,7 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
 
                   <button
                     className="btn btn-pri btn-lg btn-full"
-                    onClick={startAnalysis}
+                    onClick={() => startAnalysis()}
                   >
                     <AppIcon name="activity" /> Start AI Analysis
                   </button>
@@ -726,6 +742,19 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
                 ))}
               </div>
             )}
+
+            <div className="an-rescan">
+              <div className="an-rescan-copy">
+                <strong>Want to check another photo?</strong>
+                <span>Your assessment answers are kept, just upload a new photo.</span>
+              </div>
+              <label className="btn an-rescan-btn">
+                <input type="file" className="upload-input"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={scanAgain} />
+                <AppIcon name="cameraAdd" /> Scan Again
+              </label>
+            </div>
           </div>
 
           {result.cystFlag && (
