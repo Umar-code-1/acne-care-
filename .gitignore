@@ -26,3 +26,6 @@ Thumbs.db
 
 # Keep the local frontend Git metadata backup out of the project commit
 .local-frontend-git-backup/
+
+# Full-size TFLite export (only the fp16 one is deployed)
+model/acne_type_model.tflite

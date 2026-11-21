@@ -1,7 +1,6 @@
 import io, json, os
 import numpy as np
 import cv2
-import tensorflow as tf
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from PIL import Image
 
@@ -89,9 +88,33 @@ def validate_image(arr):
 # ---------------------------------------------------------------
 # MODEL
 # ---------------------------------------------------------------
+# Server uses the small LiteRT runtime (fits Render free 512 MB);
+# locally it falls back to TensorFlow's built-in TFLite interpreter.
+try:
+    from ai_edge_litert.interpreter import Interpreter
+except ImportError:
+    import tensorflow as tf
+    Interpreter = tf.lite.Interpreter
+
 print("Loading model...")
-model = tf.keras.models.load_model(os.path.join(BASE, "acne_type_model.keras"))
+interpreter = Interpreter(
+    model_path=os.path.join(BASE, "acne_type_model_fp16.tflite"),
+    num_threads=os.cpu_count() or 1,
+)
+interpreter.allocate_tensors()
+IN_IDX  = interpreter.get_input_details()[0]["index"]
+OUT_IDX = interpreter.get_output_details()[0]["index"]
 print("Model ready. Classes:", CLASS_NAMES)
+
+
+def run_model(batch: np.ndarray) -> np.ndarray:
+    """Runs each image through the TFLite model (its input is batch size 1)."""
+    out = []
+    for img in batch:
+        interpreter.set_tensor(IN_IDX, img[None].astype(np.float32))
+        interpreter.invoke()
+        out.append(interpreter.get_tensor(OUT_IDX)[0].copy())
+    return np.stack(out)
 
 app = FastAPI(title="AcneCare AI — Inference Service")
 
@@ -130,7 +153,7 @@ def predict_with_tta(arr: np.ndarray):
     views.append(np.clip(arr * 0.92, 0, 255))
 
     batch = np.stack(views[:N_TTA])
-    return model.predict(batch, verbose=0).mean(axis=0)
+    return run_model(batch).mean(axis=0)
 
 
 # ---------------------------------------------------------------

@@ -1,0 +1,5 @@
+training/
+__pycache__/
+*.keras
+acne_type_model.tflite
+convert_tflite.py

@@ -1,0 +1,8 @@
+# Server (Render) only — no TensorFlow, uses the small LiteRT runtime
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
+python-multipart==0.0.32
+numpy>=2.0,<3
+opencv-python-headless==4.10.0.84
+Pillow==12.3.0
+ai-edge-litert==2.4.0
