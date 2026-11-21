@@ -58,3 +58,7 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 connectDB();
+
+// Free hosting: wake the AI model as soon as the backend wakes, so it is
+// usually ready by the time the user reaches the scan screen.
+require("./controllers/scanController").wakeModel();

@@ -32,11 +32,39 @@ const format = (s) => ({
    ========================================================= */
 const ML_URL = process.env.ML_SERVICE_URL || "http://localhost:8000";
 
+// Free hosting puts the model to sleep when idle. While it wakes up (up to ~1 min)
+// the host answers 502/503/504 or drops the connection, so keep retrying for a while.
+const WAKE_STATUSES = new Set([502, 503, 504]);
+const WAKE_RETRY_MS = 10000;
+const WAKE_MAX_WAIT_MS = 120000;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Ping the model so it starts waking before anyone scans (fire-and-forget).
+const wakeModel = () => {
+  fetch(`${ML_URL}/health`, { signal: AbortSignal.timeout(90000) }).catch(() => {});
+};
+
 // file = multer memory file (buffer + mimetype)
 const predictAcne = async (file) => {
-  const form = new FormData();
-  form.append("image", new Blob([file.buffer], { type: file.mimetype }), file.originalname || "scan.jpg");
-  const res = await fetch(`${ML_URL}/predict`, { method: "POST", body: form });
+  const started = Date.now();
+  let res;
+  for (;;) {
+    const form = new FormData();
+    form.append("image", new Blob([file.buffer], { type: file.mimetype }), file.originalname || "scan.jpg");
+    let wakeReason = null;
+    try {
+      res = await fetch(`${ML_URL}/predict`, { method: "POST", body: form, signal: AbortSignal.timeout(90000) });
+      if (WAKE_STATUSES.has(res.status)) wakeReason = `HTTP ${res.status}`;
+    } catch (err) {
+      wakeReason = err.name === "TimeoutError" ? "timeout" : err.message;
+    }
+    if (!wakeReason) break;
+    if (Date.now() - started + WAKE_RETRY_MS > WAKE_MAX_WAIT_MS) {
+      throw new Error(`AI service not reachable after ${Math.round((Date.now() - started) / 1000)}s (${wakeReason})`);
+    }
+    console.log(`AI service waking up (${wakeReason}), retrying in ${WAKE_RETRY_MS / 1000}s...`);
+    await sleep(WAKE_RETRY_MS);
+  }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -47,7 +75,7 @@ const predictAcne = async (file) => {
       err.validation = true;
       throw err;
     }
-    throw new Error(`AI service error: ${JSON.stringify(detail)}`);
+    throw new Error(`AI service error (HTTP ${res.status}): ${JSON.stringify(detail)}`);
   }
   return await res.json();
 };
@@ -252,4 +280,6 @@ module.exports = {
   getPatientScans,
   getAllScans,
   deleteScan,
+  wakeModel,
+  predictAcne,
 };
