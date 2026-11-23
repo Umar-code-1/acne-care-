@@ -2,9 +2,17 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
 
+// Live site par sign-in page apne hi domain se chalao (functions/__/auth proxy).
+// Alag domain (firebaseapp.com) hone se mobile browsers storage block karte hain
+// aur "missing initial state" error aata hai.
+const SELF_HOSTED_AUTH_HOSTS = ["acne-care.pages.dev"];
+const authDomain = SELF_HOSTED_AUTH_HOSTS.includes(window.location.hostname)
+  ? window.location.host
+  : import.meta.env.VITE_FIREBASE_AUTH_DOMAIN;
+
 const firebaseConfig = {
   apiKey:     import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  authDomain,
   projectId:  import.meta.env.VITE_FIREBASE_PROJECT_ID,
   appId:      import.meta.env.VITE_FIREBASE_APP_ID,
 };
