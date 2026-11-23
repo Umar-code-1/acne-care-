@@ -1,7 +1,7 @@
 const User = require("../models/User");
 const jwt  = require("jsonwebtoken");
 const crypto = require("crypto");
-const nodemailer = require("nodemailer");
+const { isMailConfigured, sendMail } = require("../services/mailer");
 const { getFirebaseAuth } = require("../config/firebaseAdmin");
 
 const PMDC_PATTERN = /^\d{4,6}-[a-z]$/i;
@@ -223,15 +223,8 @@ const requestPasswordReset = async (req, res) => {
 
     const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
     const resetUrl = `${clientUrl.replace(/\/$/, "")}/?resetToken=${token}`;
-    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: Number(process.env.SMTP_PORT || 587),
-        secure: process.env.SMTP_SECURE === "true",
-        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-      });
-      await transporter.sendMail({
-        from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    if (isMailConfigured()) {
+      await sendMail({
         to: user.email,
         subject: "Reset your AcneCare AI password",
         text: `Use this link to reset your password within one hour: ${resetUrl}`,
