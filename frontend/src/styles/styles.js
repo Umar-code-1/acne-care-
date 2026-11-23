@@ -417,6 +417,7 @@ html:has(.auth-dialog[open]){overflow:hidden}
   .auth-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0.45rem}
   .auth-actions .auth-divider{display:none}
   .auth-actions .btn{min-height:40px;padding:0.35rem 0.4rem;line-height:1.25}
+  .auth-actions .auth-google-note{grid-column:1/-1;margin-top:0.15rem !important;line-height:1.4}
 }
 @media(max-width:480px) and (max-height:680px){
   .auth-fields-doctor{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:end;column-gap:0.5rem}

@@ -426,8 +426,8 @@ export default function AuthScreen({ onLogin, onClose, onModeChange, initialMode
               <span style={{ fontWeight: 800, color: "#4285F4" }}>G</span> Continue with Google
             </button>
             {mode === "signin" && role === "patient" && (
-              <p className="form-hint" style={{ textAlign: "center", margin: "0.5rem 0 0" }}>
-                New here? Continuing with Google creates your patient account and means you agree to the <strong>Terms and Conditions</strong>.
+              <p className="form-hint auth-google-note" style={{ textAlign: "center", margin: "0.5rem 0 0" }}>
+                New here? Google sign-in creates your patient account and you accept our <strong>Terms and Conditions</strong>.
               </p>
             )}
           </div>
