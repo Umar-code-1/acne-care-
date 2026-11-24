@@ -12,11 +12,13 @@ const {
   getPatientScans,
   getAllScans,
   deleteScan,
+  wakeModelRoute,
 } = require("../controllers/scanController");
 
 // Patient
 router.post("/", protect, authorize("patient"), scanLimiter, upload.single("image"), createScan);
 router.get("/my",    protect, authorize("patient"), getMyScans);
+router.get("/wake",  protect, authorize("patient"), wakeModelRoute);
 
 // Admin — saare scans
 router.get("/",      protect, authorize("admin"), getAllScans);

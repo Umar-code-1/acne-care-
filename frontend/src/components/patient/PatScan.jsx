@@ -258,6 +258,7 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
   const [showConsentWarning, setShowConsentWarning] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [slowAnalysis, setSlowAnalysis] = useState(false);
 
   const initialForm = () => ({
     name:        user?.name || "",
@@ -283,8 +284,9 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
     [k]: f[k].includes(v) ? f[k].filter(x => x !== v) : [...f[k], v]
   }));
 
-  // Backend se scan history lao
+  // Backend se scan history lao; also start waking the AI model (free hosting sleeps when idle)
   useEffect(() => {
+    API.get("/scans/wake").catch(() => {});
     API.get("/scans/my")
       .then(res => setAnalyses(res.data))
       .catch(err => console.log("History fetch failed:", err.message));
@@ -296,6 +298,13 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
     const timer = setInterval(() => setProgress((value) => Math.min(value + 1, 95)), 800);
     return () => clearInterval(timer);
   }, [analyzing, progress]);
+
+  // If the analysis is taking long, the AI server is probably waking up — tell the user.
+  useEffect(() => {
+    if (!analyzing) { setSlowAnalysis(false); return; }
+    const timer = setTimeout(() => setSlowAnalysis(true), 20000);
+    return () => clearTimeout(timer);
+  }, [analyzing]);
 
   const steps = buildSteps(form, set, toggle);
   const totalSteps = steps.length;
@@ -684,6 +693,13 @@ export default function PatScan({ user, analyses, refresh, setAnalyses, notify, 
                   ? "Sending your image securely"
                   : "Detecting acne type, severity and confidence"}
               </div>
+
+              {slowAnalysis && (
+                <div className="alert al-info" role="status" style={{ textAlign: 'left', fontSize: '0.82rem' }}>
+                  <AppIcon name="clock" /> The AI server is waking up after being idle. This can take
+                  1–4 minutes the first time. Please keep this page open.
+                </div>
+              )}
 
               <div style={{
                 marginTop: '0.75rem', fontSize: '0.82rem',

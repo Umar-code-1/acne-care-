@@ -36,7 +36,7 @@ const ML_URL = process.env.ML_SERVICE_URL || "http://localhost:8000";
 // the host answers 502/503/504 or drops the connection, so keep retrying for a while.
 const WAKE_STATUSES = new Set([502, 503, 504]);
 const WAKE_RETRY_MS = 10000;
-const WAKE_MAX_WAIT_MS = 120000;
+const WAKE_MAX_WAIT_MS = 240000; // a cold start on Render free has taken ~4 min
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Ping the model so it starts waking before anyone scans (fire-and-forget).
@@ -45,6 +45,13 @@ const wakeModel = () => {
 };
 
 // file = multer memory file (buffer + mimetype)
+// GET /api/scans/wake — the scan page calls this on open, so the model wakes
+// while the patient fills in the assessment.
+const wakeModelRoute = (req, res) => {
+  wakeModel();
+  res.status(202).json({ message: "Waking AI service" });
+};
+
 const predictAcne = async (file) => {
   const started = Date.now();
   let res;
@@ -281,5 +288,6 @@ module.exports = {
   getAllScans,
   deleteScan,
   wakeModel,
+  wakeModelRoute,
   predictAcne,
 };
