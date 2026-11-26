@@ -1,7 +1,9 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import API from "../../api";
 import AppIcon from "../shared/AppIcon";
-import { getGoogleIdToken, isGoogleConfigured } from "../../firebase";
+import {
+  finishGoogleRedirect, getGoogleIdToken, hasPendingGoogleRedirect, isGoogleConfigured, startGoogleRedirect,
+} from "../../firebase";
 
 const PMDC_PATTERN = /^\d{4,6}-[a-z]$/i;
 
@@ -24,7 +26,8 @@ export default function AuthScreen({ onLogin, onClose, onModeChange, initialMode
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [loading, setLoading] = useState(false);
+  // Google redirect se wapas aaye hain to shuru se "loading" dikhao
+  const [loading, setLoading] = useState(hasPendingGoogleRedirect);
   const requestInFlight = useRef(false);
   const [agreed, setAgreed] = useState(false);
   const [pmdc, setPmdc] = useState("");
@@ -218,6 +221,57 @@ export default function AuthScreen({ onLogin, onClose, onModeChange, initialMode
 
   const submit = () => (mode === "signin" ? doLogin() : doSignup());
 
+  // Google ID token backend ko do; `p` = click ke waqt ka mode/role (redirect ke baad bhi yahi)
+  const sendGoogleToken = async (idToken, p) => {
+    const res = await API.post("/auth/google", {
+      idToken,
+      mode: p.mode,
+      role: p.role,
+      pmdcNumber: p.mode === "signup" ? p.pmdc : undefined,
+      // Sign In (patient) shows a terms note under the button, so continuing = accepting
+      acceptTerms: p.mode === "signup" ? p.agreed : p.role === "patient",
+    });
+    saveToken(res.data.token, p.rememberMe);
+    onLogin(res.data);
+  };
+
+  const showGoogleError = (err) => {
+    const code = err?.code || "";
+    if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+      // user ne popup band kar diya — koi error nahi
+    } else if (code === "auth/popup-blocked") {
+      setError("Your browser blocked the Google popup. Allow popups for this site and try again.");
+    } else if (code === "auth/unauthorized-domain") {
+      setError(`This address (${window.location.hostname}) is not allowed for Google sign-in. Add it in Firebase → Authentication → Settings → Authorized domains.`);
+    } else if (code.startsWith("auth/")) {
+      console.error("Firebase Google sign-in error:", err);
+      setError(`Google sign-in failed (${code}). Please try again.`);
+    } else {
+      setError(err.response
+        ? err.response.data?.message || "Google sign-in failed. Please try again."
+        : "Could not reach the sign-in server. Please try again.");
+    }
+  };
+
+  // Full-page Google redirect se wapas aaye hain to sign-in yahin poora karo
+  useEffect(() => {
+    if (!hasPendingGoogleRedirect()) return;
+    requestInFlight.current = true;
+    finishGoogleRedirect()
+      .then((result) => {
+        if (!result) return;
+        setRole(result.pending.role);
+        return sendGoogleToken(result.idToken, result.pending);
+      })
+      .catch(showGoogleError)
+      .finally(() => {
+        requestInFlight.current = false;
+        setLoading(false);
+      });
+    // sirf screen khulne par ek dafa
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const doGoogle = async () => {
     if (requestInFlight.current) return;
     setNotice("");
@@ -232,37 +286,25 @@ export default function AuthScreen({ onLogin, onClose, onModeChange, initialMode
       if (!agreed) return setError("Please accept the Terms and Conditions.");
     }
 
+    const pending = { mode, role, pmdc: pmdc.trim().toUpperCase(), agreed, rememberMe };
     requestInFlight.current = true;
     setLoading(true);
     setError("");
     try {
-      const idToken = await getGoogleIdToken();
-      const res = await API.post("/auth/google", {
-        idToken,
-        mode,
-        role,
-        pmdcNumber: mode === "signup" ? pmdc.trim().toUpperCase() : undefined,
-        // Sign In (patient) shows a terms note under the button, so continuing = accepting
-        acceptTerms: mode === "signup" ? agreed : role === "patient",
-      });
-      saveToken(res.data.token, rememberMe);
-      onLogin(res.data);
-    } catch (err) {
-      const code = err?.code || "";
-      if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
-        // user ne popup band kar diya — koi error nahi
-      } else if (code === "auth/popup-blocked") {
-        setError("Your browser blocked the Google popup. Allow popups for this site and try again.");
-      } else if (code === "auth/unauthorized-domain") {
-        setError(`This address (${window.location.hostname}) is not allowed for Google sign-in. Add it in Firebase → Authentication → Settings → Authorized domains.`);
-      } else if (code.startsWith("auth/")) {
-        console.error("Firebase Google sign-in error:", err);
-        setError(`Google sign-in failed (${code}). Please try again.`);
-      } else {
-        setError(err.response
-          ? err.response.data?.message || "Google sign-in failed. Please try again."
-          : "Could not reach the sign-in server. Please try again.");
+      let idToken;
+      try {
+        idToken = await getGoogleIdToken();
+      } catch (err) {
+        // Safari waghera ne popup rok diya — poore page wala Google sign-in use karo
+        if (err?.code === "auth/popup-blocked") {
+          await startGoogleRedirect(pending);
+          return;
+        }
+        throw err;
       }
+      await sendGoogleToken(idToken, pending);
+    } catch (err) {
+      showGoogleError(err);
     } finally {
       requestInFlight.current = false;
       setLoading(false);
